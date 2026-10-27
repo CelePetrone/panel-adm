@@ -1,0 +1,12 @@
+{
+  "name": "Panel ADM",
+  "short_name": "Panel ADM",
+  "description": "Clientes, checklist del mes y reuniones del emprendimiento ADM",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#F5F3EE",
+  "theme_color": "#2F4B6E",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
