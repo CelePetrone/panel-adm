@@ -1,0 +1,912 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel ADM</title>
+<meta name="theme-color" content="#2F4B6E">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #F5F3EE;
+    --card: #FFFFFF;
+    --ink: #1F2A37;
+    --muted: #6B7280;
+    --line: #E5E1D8;
+    --primary: #2F4B6E;
+    --primary-soft: #E6ECF3;
+    --accent: #C36A3D;
+    --accent-soft: #F8E9E0;
+    --ok: #2E7D5B;
+    --ok-soft: #E3F1EA;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  a { color: var(--primary); }
+
+  /* Estructura */
+  .app { display: flex; min-height: 100vh; }
+  nav.side {
+    width: 220px; flex-shrink: 0; background: var(--primary); color: #fff;
+    padding: 20px 12px; position: sticky; top: 0; height: 100vh;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px 18px; font-weight: 700; font-size: 17px; }
+  .brand img { width: 30px; height: 30px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    background: none; border: 0; color: #fff; opacity: .8; text-align: left;
+    padding: 10px 12px; border-radius: 8px; cursor: pointer;
+  }
+  .nav-item:hover { background: rgba(255,255,255,.08); opacity: 1; }
+  .nav-item.active { background: rgba(255,255,255,.16); opacity: 1; font-weight: 600; }
+  .nav-item .ico { width: 22px; text-align: center; }
+  .side .foot { margin-top: auto; font-size: 13px; opacity: .8; padding: 0 8px; }
+  .side .foot button { background: none; border: 0; color: #fff; text-decoration: underline; padding: 0; cursor: pointer; }
+
+  main { flex: 1; min-width: 0; padding: 28px 32px 80px; max-width: 980px; }
+  .topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; justify-content: space-between; margin-bottom: 20px; }
+  h1 { font-size: 24px; margin: 0; }
+  h2 { font-size: 17px; margin: 0 0 12px; }
+  .sub { color: var(--muted); margin: 4px 0 0; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin-bottom: 16px; }
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .spacer { flex: 1; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+
+  .btn {
+    border: 1px solid var(--primary); background: var(--primary); color: #fff;
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; text-decoration: none; display: inline-block;
+  }
+  .btn.ghost { background: transparent; color: var(--primary); }
+  .btn.small { padding: 5px 10px; font-size: 13px; }
+  .btn:disabled { opacity: .5; cursor: default; }
+
+  select, input[type=text], input[type=date], textarea {
+    border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 8px 10px; width: 100%;
+  }
+  textarea { resize: vertical; min-height: 38px; }
+  select.client-select { width: auto; min-width: 220px; font-weight: 600; }
+
+  .tag { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+  .tag.accent { background: var(--accent-soft); color: var(--accent); }
+  .tag.ok { background: var(--ok-soft); color: var(--ok); }
+
+  .bar { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--ok); border-radius: 99px; }
+
+  /* Cliente en Inicio */
+  .client-card h3 { margin: 0 0 6px; font-size: 17px; }
+  .client-card dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 10px 0; font-size: 14px; }
+  .client-card dt { color: var(--muted); }
+  .client-card dd { margin: 0; }
+
+  /* Calendario del mes */
+  .month { position: relative; height: 54px; margin: 8px 4px 4px; }
+  .month .track { position: absolute; left: 0; right: 0; top: 22px; height: 10px; border-radius: 99px; background: var(--line); }
+  .month .seg { position: absolute; top: 22px; height: 10px; }
+  .month .mark { position: absolute; top: 0; transform: translateX(-50%); font-size: 12px; font-weight: 700; color: var(--primary); text-align: center; }
+  .month .mark::after { content: ""; display: block; width: 2px; height: 30px; margin: 2px auto 0; background: var(--primary); }
+  .month .today { position: absolute; top: 18px; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; transform: translateX(-50%); box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+  .phases { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 12px; }
+  .phase { padding: 10px; border-radius: 8px; background: var(--bg); font-size: 13px; }
+  .phase b { display: block; font-size: 13px; }
+  .phase.now { background: var(--accent-soft); outline: 2px solid var(--accent); }
+
+  /* Checklist */
+  .stage-head { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+  .stage-head h2 { margin: 0; flex: 1; }
+  .stage-head .bar { width: 120px; }
+  .group { margin-top: 14px; }
+  .group-title { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin: 0 0 6px; display: flex; gap: 8px; align-items: center; }
+  .group.now .group-title { color: var(--accent); }
+  .task { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-top: 1px solid var(--line); }
+  .task:first-of-type { border-top: 0; }
+  .task input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--ok); flex-shrink: 0; cursor: pointer; }
+  .task label { flex: 1; cursor: pointer; }
+  .task.done label { color: var(--muted); text-decoration: line-through; }
+  .task select { width: 110px; padding: 4px 6px; font-size: 13px; }
+  .collapsed .stage-body { display: none; }
+
+  /* Ficha y relevamiento */
+  .field { display: grid; grid-template-columns: minmax(180px, 38%) 1fr; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); align-items: start; }
+  .field:first-of-type { border-top: 0; }
+  .field .lbl { font-size: 14px; padding-top: 8px; }
+  .field.empty .lbl::before { content: "•"; color: var(--accent); margin-right: 6px; }
+  .note { font-size: 13px; color: var(--muted); padding: 4px 0; }
+  .saved { color: var(--ok); font-size: 12px; }
+  table.reg { width: 100%; border-collapse: collapse; font-size: 14px; }
+  table.reg th, table.reg td { border-top: 1px solid var(--line); padding: 6px; text-align: left; vertical-align: top; }
+  table.reg th { color: var(--muted); font-weight: 600; }
+  table.reg td textarea { min-height: 34px; }
+
+  /* Reuniones */
+  .meeting { border-left: 4px solid var(--primary); }
+  .meeting h3 { margin: 0; font-size: 16px; }
+  .meeting .kv { margin-top: 10px; font-size: 14px; }
+  .meeting .kv b { display: block; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-top: 8px; }
+  .meeting .kv p { margin: 2px 0 0; white-space: pre-wrap; }
+  .form-grid { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+  .form-grid .full { grid-column: 1 / -1; }
+  .form-grid label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 3px; }
+
+  /* Pantalla de ingreso */
+  .login { max-width: 460px; margin: 10vh auto; text-align: center; padding: 0 16px; }
+  .login img { width: 72px; }
+  .login .card { text-align: left; }
+
+  .banner { background: var(--accent-soft); color: #7A3B1C; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 14px; }
+  .error { background: #FDECEC; color: #8A1C1C; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 14px; }
+  .loading { color: var(--muted); padding: 30px 0; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 14px; z-index: 20; }
+
+  /* Celular */
+  @media (max-width: 760px) {
+    .app { display: block; }
+    nav.side {
+      position: fixed; bottom: 0; top: auto; left: 0; right: 0; width: auto; height: auto; z-index: 10;
+      flex-direction: row; padding: 6px; justify-content: space-around; gap: 0;
+    }
+    .brand, .side .foot { display: none; }
+    .nav-item { flex-direction: column; gap: 2px; font-size: 11px; padding: 6px 4px; text-align: center; width: auto; flex: 1; }
+    .nav-item .ico { font-size: 18px; }
+    main { padding: 18px 16px 90px; }
+    .field { grid-template-columns: 1fr; gap: 4px; }
+    .field .lbl { padding-top: 0; }
+    .phases { grid-template-columns: 1fr 1fr; }
+    .form-grid { grid-template-columns: 1fr; }
+    .stage-head .bar { width: 70px; }
+    select.client-select { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="config.js"></script>
+<script src="demo-data.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+"use strict";
+
+const CFG = window.PANEL_CONFIG || {};
+const SCOPES = "https://www.googleapis.com/auth/spreadsheets openid email profile";
+const TABS = { checklist: "Checklist", relev: "Relevamiento", eval: "Evaluación interna", ficha: "Ficha del cliente" };
+const FICHA_HEADINGS = ["Datos generales", "Servicio contratado", "Equipo interno", "Calendario", "Datos operativos",
+  "Accesos y confidencialidad", "Registro mensual", "Historial y observaciones"];
+const PHASES = [
+  { from: 1, to: 5, name: "Recepción", text: "El cliente manda la documentación hasta el día 5." },
+  { from: 6, to: 9, name: "Carga y conciliación", text: "Cargar movimientos y conciliar cuentas." },
+  { from: 10, to: 10, name: "Cierre", text: "Día 10: cierre del mes." },
+  { from: 11, to: 14, name: "Análisis", text: "Dashboard e indicadores (Paquete B)." },
+  { from: 15, to: 17, name: "Reunión", text: "Día 15: reunión y minuta." },
+];
+
+const state = {
+  mode: null,          // "google" o "demo"
+  user: null,
+  page: "inicio",
+  clients: [],         // de la planilla índice
+  indexTab: null,
+  indexHeaders: [],
+  current: null,       // nombre del cliente elegido
+  cache: {},           // datos por planilla
+  meetings: null,
+  collapsed: {},
+  error: null,
+};
+
+/* ---------- utilidades ---------- */
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const txt = (v) => String(v ?? "").trim();
+const isTrue = (v) => v === true || /^(true|verdadero|sí|si|x)$/i.test(txt(v));
+const colLetter = (n) => { let s = ""; n++; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
+const tabRange = (tab, a1) => `'${tab.replace(/'/g, "''")}'!${a1}`;
+const sheetIdFrom = (link) => { const m = txt(link).match(/\/d\/([a-zA-Z0-9_-]+)/); return m ? m[1] : (/^[a-zA-Z0-9_-]{20,}$/.test(txt(link)) ? txt(link) : ""); };
+const sheetUrl = (id) => `https://docs.google.com/spreadsheets/d/${id}/edit`;
+
+function toast(msg) {
+  const t = document.createElement("div");
+  t.className = "toast"; t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2200);
+}
+function store(key, val) { try { val === undefined ? sessionStorage.removeItem(key) : sessionStorage.setItem(key, JSON.stringify(val)); } catch (e) {} }
+function recall(key) { try { return JSON.parse(sessionStorage.getItem(key)); } catch (e) { return null; } }
+
+/* ---------- acceso a datos: Google Sheets o datos de ejemplo ---------- */
+
+let token = null, tokenClient = null, tokenWaiters = [];
+
+function requestToken(prompt) {
+  return new Promise((resolve, reject) => {
+    tokenWaiters.push({ resolve, reject });
+    if (tokenWaiters.length > 1) return;
+    if (!tokenClient) {
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: CFG.googleClientId,
+        scope: SCOPES,
+        callback: (resp) => {
+          const waiters = tokenWaiters; tokenWaiters = [];
+          if (resp.error) { waiters.forEach((w) => w.reject(new Error(resp.error))); return; }
+          token = { value: resp.access_token, exp: Date.now() + (resp.expires_in - 60) * 1000 };
+          store("adm_token", token);
+          waiters.forEach((w) => w.resolve(token.value));
+        },
+        error_callback: (err) => {
+          const waiters = tokenWaiters; tokenWaiters = [];
+          waiters.forEach((w) => w.reject(new Error(err.type || "No se pudo iniciar sesión")));
+        },
+      });
+    }
+    tokenClient.requestAccessToken({ prompt });
+  });
+}
+
+async function getToken() {
+  if (token && token.exp > Date.now()) return token.value;
+  return requestToken("");
+}
+
+async function gfetch(url, opts = {}, retry = true) {
+  const t = await getToken();
+  const res = await fetch(url, { ...opts, headers: { Authorization: "Bearer " + t, "Content-Type": "application/json", ...(opts.headers || {}) } });
+  if (res.status === 401 && retry) { token = null; store("adm_token"); return gfetch(url, opts, false); }
+  if (!res.ok) {
+    let msg = res.status + "";
+    try { const j = await res.json(); msg = j.error?.message || msg; } catch (e) {}
+    if (res.status === 403 || res.status === 404) msg = "No tenés acceso a esta planilla, o el link no es correcto. (" + msg + ")";
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+const SHEETS = "https://sheets.googleapis.com/v4/spreadsheets/";
+
+const googleApi = {
+  async tabs(id) {
+    const j = await gfetch(SHEETS + id + "?fields=sheets.properties.title");
+    return j.sheets.map((s) => s.properties.title);
+  },
+  async get(id, range) {
+    const j = await gfetch(SHEETS + id + "/values/" + encodeURIComponent(range) +
+      "?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING");
+    return j.values || [];
+  },
+  async set(id, range, values) {
+    await gfetch(SHEETS + id + "/values/" + encodeURIComponent(range) + "?valueInputOption=USER_ENTERED",
+      { method: "PUT", body: JSON.stringify({ values }) });
+  },
+  async append(id, range, values) {
+    await gfetch(SHEETS + id + "/values/" + encodeURIComponent(range) + ":append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS",
+      { method: "POST", body: JSON.stringify({ values }) });
+  },
+  async addTab(id, title) {
+    await gfetch(SHEETS + id + ":batchUpdate", { method: "POST", body: JSON.stringify({ requests: [{ addSheet: { properties: { title } } }] }) });
+  },
+  async me() {
+    try { return await gfetch("https://www.googleapis.com/oauth2/v3/userinfo"); } catch (e) { return null; }
+  },
+};
+
+// Versión de ejemplo: misma interfaz, pero todo queda en memoria.
+const demoDb = JSON.parse(JSON.stringify(window.DEMO_DATA || {}));
+function parseA1(range) {
+  const m = range.match(/^'?(.*?)'?!([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$/);
+  const num = (L) => L.split("").reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1;
+  return { tab: m[1].replace(/''/g, "'"), c1: num(m[2]), r1: +m[3] - 1, c2: m[4] ? num(m[4]) : num(m[2]), r2: m[5] ? +m[5] - 1 : +m[3] - 1 };
+}
+function demoBook(id) {
+  if (!demoDb[id]) demoDb[id] = JSON.parse(JSON.stringify(window.DEMO_DATA.DEMO_B));
+  return demoDb[id];
+}
+const demoApi = {
+  async tabs(id) { return Object.keys(demoBook(id)); },
+  async get(id, range) {
+    const p = parseA1(range), rows = demoBook(id)[p.tab];
+    if (!rows) throw new Error("No existe la pestaña " + p.tab);
+    return rows.slice(p.r1, p.r2 + 1).map((r) => (r || []).slice(p.c1, p.c2 + 1));
+  },
+  async set(id, range, values) {
+    const p = parseA1(range), rows = demoBook(id)[p.tab];
+    values.forEach((vr, i) => vr.forEach((v, j) => {
+      const r = p.r1 + i; while (rows.length <= r) rows.push([]);
+      while (rows[r].length <= p.c1 + j) rows[r].push("");
+      rows[r][p.c1 + j] = v;
+    }));
+  },
+  async append(id, range, values) { const p = parseA1(range); demoBook(id)[p.tab].push(...values); },
+  async addTab(id, title) { demoBook(id)[title] = []; },
+  async me() { return { given_name: "Demo" }; },
+};
+
+const api = () => (state.mode === "demo" ? demoApi : googleApi);
+
+/* ---------- lectura de las planillas ---------- */
+
+async function loadIndex() {
+  const tabs = await api().tabs(CFG.indiceId_active);
+  state.indexTab = tabs.find((t) => t !== "Reuniones") || tabs[0];
+  const rows = await api().get(CFG.indiceId_active, tabRange(state.indexTab, "A1:Z200"));
+  const headers = (rows[0] || []).map(txt);
+  state.indexHeaders = headers;
+  const col = (name) => headers.findIndex((h) => h.toLowerCase() === name.toLowerCase());
+  const c = { cliente: col("Cliente"), estado: col("Estado"), inicio: col("Inicio"), paquete: col("Paquete"),
+    resp: col("Responsable"), carpeta: col("Carpeta"), notas: col("Notas"), planilla: col("Planilla") };
+  state.indexCols = c;
+  state.clients = rows.slice(1).map((r, i) => ({
+    row: i + 2,
+    name: txt(r[c.cliente]),
+    estado: txt(r[c.estado]), inicio: txt(r[c.inicio]), paquete: txt(r[c.paquete]),
+    resp: txt(r[c.resp]), carpeta: txt(r[c.carpeta]), notas: txt(r[c.notas]),
+    sheetId: c.planilla >= 0 ? sheetIdFrom(r[c.planilla]) : "",
+  })).filter((x) => x.name);
+  if (!state.current || !state.clients.some((x) => x.name === state.current)) {
+    state.current = (state.clients.find((x) => x.sheetId) || state.clients[0] || {}).name || null;
+  }
+}
+
+async function loadClientBook(client, force) {
+  if (!client || !client.sheetId) return null;
+  if (state.cache[client.sheetId] && !force) return state.cache[client.sheetId];
+  const id = client.sheetId;
+  const tabs = await api().tabs(id);
+  const grab = (tab, range) => (tabs.includes(tab) ? api().get(id, tabRange(tab, range)) : Promise.resolve(null));
+  const [chk, rel, ev, fi] = await Promise.all([
+    grab(TABS.checklist, "A1:D120"), grab(TABS.relev, "A1:B120"), grab(TABS.eval, "A1:B60"), grab(TABS.ficha, "A1:F120"),
+  ]);
+  const book = { id, checklist: parseChecklist(chk), relev: parseForm(rel, "relev"), eval: parseForm(ev, "eval"), ficha: parseForm(fi, "ficha") };
+  state.cache[id] = book;
+  return book;
+}
+
+function parseChecklist(rows) {
+  if (!rows) return null;
+  const out = { inicio: "", stages: [] };
+  let start = rows.findIndex((r) => txt(r[0]) === "Etapa" && txt(r[1]) === "Tarea");
+  rows.forEach((r) => { if (/^fecha de inicio/i.test(txt(r[0]))) out.inicio = txt(r[1]); });
+  if (start < 0) start = 4;
+  let stage = null, group = null;
+  for (let i = start + 1; i < rows.length; i++) {
+    const r = rows[i] || [], a = txt(r[0]), b = txt(r[1]);
+    if (!a && !b) continue;
+    if (a && !b) { stage = { name: a, groups: [] }; out.stages.push(stage); group = null; continue; }
+    if (!stage) { stage = { name: "Tareas", groups: [] }; out.stages.push(stage); }
+    if (a || !group) { group = { name: a || "", tasks: [] }; stage.groups.push(group); }
+    group.tasks.push({ row: i + 1, text: b, done: isTrue(r[2]), resp: txt(r[3]) });
+  }
+  return out;
+}
+
+function parseForm(rows, kind) {
+  if (!rows) return null;
+  const sections = [];
+  let sec = null, table = null;
+  const newSec = (title) => { sec = { title, items: [] }; sections.push(sec); table = null; };
+  for (let i = 1; i < rows.length; i++) {      // la fila 1 es el título de la pestaña
+    const r = rows[i] || [], a = txt(r[0]);
+    if (!a) continue;
+    let heading = false, note = false;
+    if (kind === "relev") heading = /^\d+\.\s/.test(a) || a === "Participantes";
+    if (kind === "eval") note = /^Tramo \d/.test(a);
+    if (kind === "ficha") { heading = FICHA_HEADINGS.includes(a); note = a.startsWith("("); }
+    if (heading) {
+      newSec(a);
+      const cols = r.map((v, j) => ({ j, h: txt(v) })).filter((x) => x.j > 0 && x.h);
+      if (cols.length) { table = cols; sec.table = cols; sec.rows = []; }
+      continue;
+    }
+    if (!sec) newSec("");
+    if (note) { sec.items.push({ note: a }); continue; }
+    if (table) { sec.rows.push({ row: i + 1, label: a, cells: table.map((c) => ({ col: c.j, value: txt(r[c.j]) })) }); continue; }
+    sec.items.push({ row: i + 1, label: a, value: txt(r[1]) });
+  }
+  return sections;
+}
+
+async function loadMeetings(force) {
+  if (state.meetings && !force) return state.meetings;
+  const tabs = await api().tabs(CFG.indiceId_active);
+  if (!tabs.includes("Reuniones")) { state.meetings = []; return state.meetings; }
+  const rows = await api().get(CFG.indiceId_active, tabRange("Reuniones", "A1:I1000"));
+  state.meetings = rows.slice(1).map((r, i) => ({
+    row: i + 2, fecha: txt(r[0]), cliente: txt(r[1]), tipo: txt(r[2]), participantes: txt(r[3]),
+    temas: txt(r[4]), decisiones: txt(r[5]), pendientes: txt(r[6]), minuta: txt(r[7]), cargo: txt(r[8]),
+  })).filter((m) => m.fecha || m.temas);
+  return state.meetings;
+}
+
+/* ---------- ingreso ---------- */
+
+function renderLogin(msg) {
+  const hasGoogle = !!CFG.googleClientId;
+  $("#root").innerHTML = `
+    <div class="login">
+      <img src="icon.svg" alt="">
+      <h1 style="margin:10px 0 4px">Panel ADM</h1>
+      <p class="sub">Clientes, checklist del mes y reuniones, en un solo lugar.</p>
+      ${msg ? `<div class="error" style="margin-top:16px">${esc(msg)}</div>` : ""}
+      <div class="card" style="margin-top:20px">
+        ${hasGoogle
+          ? `<p style="margin-top:0">Entrá con tu cuenta de Google. Vas a ver los clientes de las planillas que tengas compartidas.</p>
+             <button class="btn" id="btn-google" style="width:100%">Entrar con Google</button>`
+          : `<p style="margin-top:0">Todavía falta conectar el panel con Google. Mientras tanto podés recorrerlo con datos de ejemplo.</p>`}
+        <button class="btn ghost" id="btn-demo" style="width:100%;margin-top:10px">Ver con datos de ejemplo</button>
+      </div>
+    </div>`;
+  if (hasGoogle) $("#btn-google").onclick = () => start("google", true);
+  $("#btn-demo").onclick = () => start("demo");
+}
+
+async function start(mode, interactive) {
+  state.mode = mode;
+  state.cache = {}; state.meetings = null;
+  CFG.indiceId_active = mode === "demo" ? "INDICE" : CFG.indiceId;
+  store("adm_mode", mode);
+  $("#root").innerHTML = `<div class="login"><p class="loading">Cargando…</p></div>`;
+  try {
+    if (mode === "google") {
+      if (!window.google?.accounts?.oauth2) await waitForGoogle();
+      if (interactive) await requestToken("");
+      state.user = await googleApi.me();
+    } else {
+      state.user = { given_name: "Demo" };
+    }
+    await loadIndex();
+    renderApp();
+  } catch (e) {
+    store("adm_mode"); store("adm_token"); token = null;
+    renderLogin("No se pudo entrar: " + e.message);
+  }
+}
+
+function waitForGoogle() {
+  return new Promise((resolve, reject) => {
+    let n = 0;
+    const t = setInterval(() => {
+      if (window.google?.accounts?.oauth2) { clearInterval(t); resolve(); }
+      else if (++n > 50) { clearInterval(t); reject(new Error("No cargó el inicio de sesión de Google.")); }
+    }, 100);
+  });
+}
+
+function logout() {
+  if (state.mode === "google" && token && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(token.value, () => {});
+  token = null; store("adm_token"); store("adm_mode");
+  state.mode = null; state.user = null;
+  renderLogin();
+}
+
+/* ---------- armado general ---------- */
+
+const PAGES = [
+  { id: "inicio", ico: "🏠", name: "Inicio" },
+  { id: "ficha", ico: "🪪", name: "Ficha" },
+  { id: "relev", ico: "📝", name: "Relevamiento" },
+  { id: "checklist", ico: "✅", name: "Checklist" },
+  { id: "reuniones", ico: "🗓️", name: "Reuniones" },
+];
+
+function renderApp() {
+  $("#root").innerHTML = `
+    <div class="app">
+      <nav class="side">
+        <div class="brand"><img src="icon.svg" alt="">Panel ADM</div>
+        ${PAGES.map((p) => `<button class="nav-item ${p.id === state.page ? "active" : ""}" data-page="${p.id}"><span class="ico">${p.ico}</span>${p.name}</button>`).join("")}
+        <div class="foot">
+          ${state.user?.given_name ? `Hola, ${esc(state.user.given_name)}<br>` : ""}
+          <button id="btn-out">${state.mode === "demo" ? "Salir del ejemplo" : "Cerrar sesión"}</button>
+        </div>
+      </nav>
+      <main id="page"></main>
+    </div>`;
+  document.querySelectorAll(".nav-item").forEach((b) => (b.onclick = () => go(b.dataset.page)));
+  $("#btn-out").onclick = logout;
+  renderPage();
+}
+
+function go(page) {
+  state.page = page;
+  store("adm_page", page);
+  document.querySelectorAll(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.page === page));
+  renderPage();
+  window.scrollTo(0, 0);
+}
+
+async function renderPage() {
+  const el = $("#page");
+  el.innerHTML = `<p class="loading">Cargando…</p>`;
+  try {
+    const fn = { inicio: pageInicio, ficha: pageFicha, relev: pageRelev, checklist: pageChecklist, reuniones: pageReuniones }[state.page];
+    await fn(el);
+  } catch (e) {
+    el.innerHTML = `<div class="error">Algo falló: ${esc(e.message)}</div><button class="btn ghost" id="retry">Reintentar</button>`;
+    $("#retry").onclick = () => { state.cache = {}; state.meetings = null; renderPage(); };
+  }
+}
+
+function demoBanner() {
+  return state.mode === "demo" ? `<div class="banner">Estás viendo datos de ejemplo. Los cambios no se guardan en ninguna planilla.</div>` : "";
+}
+
+function clientPicker() {
+  return `<select class="client-select" id="client-select">
+    ${state.clients.map((c) => `<option ${c.name === state.current ? "selected" : ""}>${esc(c.name)}</option>`).join("")}
+  </select>`;
+}
+function bindClientPicker() {
+  const s = $("#client-select");
+  if (s) s.onchange = () => { state.current = s.value; store("adm_client", s.value); renderPage(); };
+}
+const currentClient = () => state.clients.find((c) => c.name === state.current);
+
+function noSheetMessage(c) {
+  return `<div class="card">
+    <h2>${esc(c ? c.name : "Sin clientes")}</h2>
+    <p class="muted">${c ? "Este cliente todavía no tiene su planilla vinculada. Pegá el link de su planilla (Checklist + Relevamiento + Ficha) en Inicio." : "Agregá clientes en la planilla índice."}</p>
+    ${c ? `<button class="btn" onclick="go('inicio')">Ir a Inicio</button>` : ""}
+  </div>`;
+}
+
+/* ---------- Inicio ---------- */
+
+function phaseFor(day) { return PHASES.findIndex((p) => day >= p.from && day <= p.to); }
+
+function monthCard() {
+  const now = new Date();
+  const day = now.getDate();
+  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const pct = (d) => ((d - 1) / (last - 1)) * 100;
+  const ph = phaseFor(day);
+  const mes = now.toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+  const colors = ["#C9D6E6", "#AFC3DB", "#2F4B6E", "#D9B79F", "#C36A3D"];
+  return `<div class="card">
+    <div class="row"><h2 style="margin:0">Cómo viene el mes</h2><span class="spacer"></span><span class="muted small">Hoy es ${day} de ${esc(mes)}</span></div>
+    <div class="month">
+      <div class="track"></div>
+      ${PHASES.map((p, i) => `<div class="seg" style="left:${pct(p.from)}%;width:${Math.max(pct(p.to + 1) - pct(p.from), 1)}%;background:${colors[i]}"></div>`).join("")}
+      ${[5, 10, 15].map((d) => `<div class="mark" style="left:${pct(d)}%">${d}</div>`).join("")}
+      <div class="today" style="left:${pct(day)}%" title="Hoy"></div>
+    </div>
+    <div class="phases">
+      ${PHASES.map((p, i) => `<div class="phase ${i === ph ? "now" : ""}"><b>${p.from === p.to ? "Día " + p.from : "Días " + p.from + " a " + p.to}</b>${p.name}<div class="muted">${p.text}</div></div>`).join("")}
+    </div>
+    ${ph < 0 ? `<p class="muted small" style="margin-bottom:0">Ya pasó la reunión del mes: buen momento para preparar el próximo cierre.</p>` : ""}
+  </div>`;
+}
+
+function checklistStats(chk) {
+  const out = {};
+  (chk?.stages || []).forEach((s) => {
+    const tasks = s.groups.flatMap((g) => g.tasks);
+    out[s.name] = { total: tasks.length, done: tasks.filter((t) => t.done).length };
+  });
+  return out;
+}
+function formStats(sections) {
+  const items = (sections || []).flatMap((s) => s.items.filter((x) => x.row));
+  return { total: items.length, done: items.filter((x) => x.value).length };
+}
+const barHtml = (done, total) => `<div class="bar"><span style="width:${total ? Math.round((done / total) * 100) : 0}%"></span></div>`;
+
+async function pageInicio(el) {
+  const books = await Promise.all(state.clients.map((c) => loadClientBook(c).catch((e) => ({ error: e.message }))));
+  el.innerHTML = `
+    ${demoBanner()}
+    <div class="topbar"><div><h1>Inicio</h1><p class="sub">${state.clients.length} clientes</p></div>
+      <div class="row">
+        ${state.mode === "google" ? `<a class="btn ghost small" href="${sheetUrl(CFG.indiceId)}" target="_blank" rel="noopener">Abrir planilla índice</a>` : ""}
+        <button class="btn ghost small" id="reload">Actualizar</button>
+      </div>
+    </div>
+    ${monthCard()}
+    <div class="grid">
+      ${state.clients.map((c, i) => clientCard(c, books[i])).join("")}
+    </div>`;
+  $("#reload").onclick = async () => { state.cache = {}; await loadIndex(); renderPage(); };
+  el.querySelectorAll("[data-open]").forEach((b) => (b.onclick = () => { state.current = b.dataset.client; store("adm_client", state.current); go(b.dataset.open); }));
+  el.querySelectorAll("[data-link]").forEach((f) => (f.onsubmit = (ev) => { ev.preventDefault(); linkSheet(f.dataset.link, f.querySelector("input").value); }));
+}
+
+function clientCard(c, book) {
+  const estadoClass = /piloto|activo/i.test(c.estado) ? "ok" : "accent";
+  let body = "";
+  if (!c.sheetId) {
+    body = `<form data-link="${esc(c.name)}" style="margin-top:10px">
+      <p class="small muted" style="margin:0 0 6px">Pegá el link de su planilla de checklist, relevamiento y ficha:</p>
+      <div class="row"><input type="text" placeholder="https://docs.google.com/spreadsheets/d/…" style="flex:1;min-width:0"><button class="btn small">Vincular</button></div>
+    </form>`;
+  } else if (!book || book.error) {
+    body = `<p class="error small">${esc(book?.error || "No se pudo leer la planilla")}</p>`;
+  } else {
+    const st = checklistStats(book.checklist);
+    const cierre = st["Cierre mensual"], alta = st["Incorporación de un cliente nuevo"];
+    const rel = formStats(book.relev);
+    const line = (label, s) => s ? `<div class="small" style="margin-top:8px"><div class="row"><span>${label}</span><span class="spacer"></span><span class="muted">${s.done} de ${s.total}</span></div>${barHtml(s.done, s.total)}</div>` : "";
+    body = line("Incorporación", alta) + line("Cierre del mes", cierre) + line("Relevamiento", rel) +
+      `<div class="row" style="margin-top:14px">
+        <button class="btn small" data-open="checklist" data-client="${esc(c.name)}">Checklist</button>
+        <button class="btn ghost small" data-open="ficha" data-client="${esc(c.name)}">Ficha</button>
+        <button class="btn ghost small" data-open="relev" data-client="${esc(c.name)}">Relevamiento</button>
+      </div>`;
+  }
+  return `<div class="card client-card">
+    <div class="row"><h3>${esc(c.name)}</h3><span class="spacer"></span>${c.estado ? `<span class="tag ${estadoClass}">${esc(c.estado)}</span>` : ""}</div>
+    <dl>
+      <dt>Paquete</dt><dd>${esc(c.paquete || "—")}</dd>
+      <dt>Responsable</dt><dd>${esc(c.resp || "—")}</dd>
+      <dt>Inicio</dt><dd>${esc(c.inicio || "—")}</dd>
+      ${c.notas ? `<dt>Notas</dt><dd>${esc(c.notas)}</dd>` : ""}
+    </dl>
+    ${c.carpeta ? `<a class="small" href="${esc(c.carpeta)}" target="_blank" rel="noopener">Abrir carpeta en Drive</a>` : ""}
+    ${body}
+  </div>`;
+}
+
+async function linkSheet(name, link) {
+  const id = sheetIdFrom(link);
+  if (!id) { toast("Ese link no parece de una planilla de Google"); return; }
+  const c = state.clients.find((x) => x.name === name);
+  let col = state.indexCols.planilla;
+  if (col < 0) {
+    col = state.indexHeaders.length;
+    await api().set(CFG.indiceId_active, tabRange(state.indexTab, colLetter(col) + "1"), [["Planilla"]]);
+  }
+  await api().set(CFG.indiceId_active, tabRange(state.indexTab, colLetter(col) + c.row), [[sheetUrl(id)]]);
+  await loadIndex();
+  toast("Planilla vinculada");
+  renderPage();
+}
+
+/* ---------- Checklist ---------- */
+
+async function pageChecklist(el) {
+  const c = currentClient();
+  const book = await loadClientBook(c);
+  if (!book) { el.innerHTML = `<div class="topbar"><h1>Checklist</h1>${clientPicker()}</div>${noSheetMessage(c)}`; bindClientPicker(); return; }
+  const chk = book.checklist;
+  const day = new Date().getDate();
+  const ph = phaseFor(day);
+  el.innerHTML = `
+    ${demoBanner()}
+    <div class="topbar">
+      <div><h1>Checklist</h1><p class="sub">${chk?.inicio ? "Inicio del servicio: " + esc(chk.inicio) : "Tildá a medida que avanzan. Se guarda en la planilla."}</p></div>
+      <div class="row">${clientPicker()}${openSheetBtn(book)}</div>
+    </div>
+    ${!chk ? `<div class="card muted">La planilla no tiene una pestaña "Checklist".</div>` :
+      chk.stages.map((s, si) => {
+        const tasks = s.groups.flatMap((g) => g.tasks), done = tasks.filter((t) => t.done).length;
+        const key = book.id + si;
+        const collapsed = state.collapsed[key] ?? (!/cierre mensual/i.test(s.name) && !/incorporación/i.test(s.name));
+        return `<div class="card ${collapsed ? "collapsed" : ""}" data-stage="${key}">
+          <div class="stage-head"><h2>${esc(s.name)}</h2><span class="small muted">${done} de ${tasks.length}</span>${barHtml(done, tasks.length)}<span class="muted">${collapsed ? "▸" : "▾"}</span></div>
+          <div class="stage-body">
+            ${s.groups.map((g) => {
+              const now = /cierre mensual/i.test(s.name) && ph >= 0 && groupMatchesPhase(g.name, ph);
+              return `<div class="group ${now ? "now" : ""}">
+                ${g.name ? `<div class="group-title">${esc(g.name)}${now ? `<span class="tag accent">Ahora</span>` : ""}</div>` : ""}
+                ${g.tasks.map((t) => `<div class="task ${t.done ? "done" : ""}">
+                  <input type="checkbox" id="t${t.row}" data-row="${t.row}" ${t.done ? "checked" : ""}>
+                  <label for="t${t.row}">${esc(t.text)}</label>
+                  <select data-resp="${t.row}" aria-label="Responsable">
+                    <option value="">—</option>
+                    ${[...new Set([...(CFG.socias || []), t.resp].filter(Boolean))].map((s) => `<option ${s === t.resp ? "selected" : ""}>${esc(s)}</option>`).join("")}
+                  </select>
+                </div>`).join("")}
+              </div>`;
+            }).join("")}
+          </div>
+        </div>`;
+      }).join("")}`;
+  bindClientPicker();
+  el.querySelectorAll("[data-stage] .stage-head").forEach((h) => (h.onclick = () => {
+    const card = h.parentElement, key = card.dataset.stage;
+    state.collapsed[key] = !card.classList.contains("collapsed");
+    card.classList.toggle("collapsed");
+    h.lastElementChild.textContent = state.collapsed[key] ? "▸" : "▾";
+  }));
+  el.querySelectorAll("input[data-row]").forEach((cb) => (cb.onchange = async () => {
+    const row = +cb.dataset.row, task = findTask(chk, row);
+    cb.closest(".task").classList.toggle("done", cb.checked);
+    try {
+      await api().set(book.id, tabRange(TABS.checklist, "C" + row), [[cb.checked]]);
+      task.done = cb.checked;
+      refreshStageCounts(cb.closest("[data-stage]"));
+    } catch (e) { cb.checked = !cb.checked; cb.closest(".task").classList.toggle("done", cb.checked); toast("No se pudo guardar: " + e.message); }
+  }));
+  el.querySelectorAll("select[data-resp]").forEach((s) => (s.onchange = async () => {
+    const row = +s.dataset.resp;
+    try { await api().set(book.id, tabRange(TABS.checklist, "D" + row), [[s.value]]); findTask(chk, row).resp = s.value; toast("Guardado"); }
+    catch (e) { toast("No se pudo guardar: " + e.message); }
+  }));
+}
+
+function groupMatchesPhase(name, ph) {
+  const n = name.toLowerCase();
+  return [/1 a 5|recepci/, /6 a 9|carga/, /día 10|cierre/, /11 a 14|análisis/, /15 a 17|reuni/][ph].test(n);
+}
+function findTask(chk, row) { for (const s of chk.stages) for (const g of s.groups) for (const t of g.tasks) if (t.row === row) return t; }
+function refreshStageCounts(card) {
+  const boxes = card.querySelectorAll("input[data-row]"), done = [...boxes].filter((b) => b.checked).length;
+  card.querySelector(".stage-head .small").textContent = `${done} de ${boxes.length}`;
+  card.querySelector(".stage-head .bar span").style.width = Math.round((done / boxes.length) * 100) + "%";
+}
+function openSheetBtn(book) {
+  return state.mode === "google" ? `<a class="btn ghost small" href="${sheetUrl(book.id)}" target="_blank" rel="noopener">Abrir planilla</a>` : "";
+}
+
+/* ---------- Ficha y Relevamiento ---------- */
+
+async function pageFicha(el) {
+  const c = currentClient(), book = await loadClientBook(c);
+  if (!book) { el.innerHTML = `<div class="topbar"><h1>Ficha del cliente</h1>${clientPicker()}</div>${noSheetMessage(c)}`; bindClientPicker(); return; }
+  const st = formStats(book.ficha);
+  el.innerHTML = `
+    ${demoBanner()}
+    <div class="topbar">
+      <div><h1>Ficha del cliente</h1><p class="sub">${st.done} de ${st.total} datos completos. Se guarda al salir de cada casillero.</p></div>
+      <div class="row">${clientPicker()}${openSheetBtn(book)}</div>
+    </div>
+    ${book.ficha ? formSections(book.ficha) : `<div class="card muted">La planilla no tiene una pestaña "${TABS.ficha}".</div>`}`;
+  bindClientPicker();
+  bindFormInputs(el, book, TABS.ficha);
+}
+
+async function pageRelev(el) {
+  const c = currentClient(), book = await loadClientBook(c);
+  if (!book) { el.innerHTML = `<div class="topbar"><h1>Relevamiento</h1>${clientPicker()}</div>${noSheetMessage(c)}`; bindClientPicker(); return; }
+  const st = formStats(book.relev);
+  el.innerHTML = `
+    ${demoBanner()}
+    <div class="topbar">
+      <div><h1>Relevamiento</h1><p class="sub">${st.done} de ${st.total} respondidas. Se guarda al salir de cada casillero.</p></div>
+      <div class="row">${clientPicker()}${openSheetBtn(book)}</div>
+    </div>
+    <div class="card"><div class="row small"><span>Avance del relevamiento</span><span class="spacer"></span><span class="muted">${st.total ? Math.round((st.done / st.total) * 100) : 0}%</span></div>${barHtml(st.done, st.total)}</div>
+    ${book.relev ? formSections(book.relev, TABS.relev) : `<div class="card muted">La planilla no tiene una pestaña "${TABS.relev}".</div>`}
+    ${book.eval ? `<h2 style="margin:26px 0 12px">Evaluación interna</h2><p class="sub" style="margin:-6px 0 12px">Solo para nosotras: no se comparte con el cliente.</p>${formSections(book.eval, TABS.eval)}` : ""}`;
+  bindClientPicker();
+  bindFormInputs(el, book);
+}
+
+function formSections(sections, tab) {
+  return sections.map((s) => `<div class="card">
+    ${s.title ? `<h2>${esc(s.title)}</h2>` : ""}
+    ${s.items.map((it) => it.note ? `<div class="note">${esc(it.note)}</div>` :
+      `<div class="field ${it.value ? "" : "empty"}">
+        <div class="lbl">${esc(it.label.replace(/:\s*$/, ""))}</div>
+        <div><textarea rows="1" data-tab="${esc(tab || TABS.ficha)}" data-cell="B${it.row}">${esc(it.value)}</textarea></div>
+      </div>`).join("")}
+    ${s.table ? `<div style="overflow-x:auto"><table class="reg">
+      <tr><th></th>${s.table.map((c) => `<th>${esc(c.h)}</th>`).join("")}</tr>
+      ${s.rows.map((r) => `<tr><th>${esc(r.label.replace(/:\s*$/, ""))}</th>${r.cells.map((c) =>
+        `<td><textarea rows="1" data-tab="${esc(tab || TABS.ficha)}" data-cell="${colLetter(c.col)}${r.row}">${esc(c.value)}</textarea></td>`).join("")}</tr>`).join("")}
+    </table></div>` : ""}
+  </div>`).join("");
+}
+
+function autosize(t) { t.style.height = "auto"; t.style.height = t.scrollHeight + 2 + "px"; }
+
+function bindFormInputs(el, book) {
+  el.querySelectorAll("textarea[data-cell]").forEach((t) => {
+    autosize(t);
+    t.dataset.orig = t.value;
+    t.oninput = () => autosize(t);
+    t.onblur = async () => {
+      if (t.value === t.dataset.orig) return;
+      try {
+        await api().set(book.id, tabRange(t.dataset.tab, t.dataset.cell), [[t.value]]);
+        t.dataset.orig = t.value;
+        const f = t.closest(".field"); if (f) f.classList.toggle("empty", !t.value.trim());
+        delete state.cache[book.id];
+        toast("Guardado");
+      } catch (e) { toast("No se pudo guardar: " + e.message); }
+    };
+  });
+}
+
+/* ---------- Reuniones ---------- */
+
+async function pageReuniones(el) {
+  const meetings = await loadMeetings();
+  const filter = state.meetingFilter || "";
+  const list = meetings.filter((m) => !filter || m.cliente === filter).slice().reverse();
+  const pendientes = list.filter((m) => m.pendientes);
+  el.innerHTML = `
+    ${demoBanner()}
+    <div class="topbar">
+      <div><h1>Reuniones</h1><p class="sub">Minutas y pendientes de cada reunión, con clientes o entre nosotras.</p></div>
+      <div class="row">
+        <select id="mfilter" style="width:auto">
+          <option value="">Todas</option>
+          ${["Interna", ...state.clients.map((c) => c.name)].map((n) => `<option ${n === filter ? "selected" : ""}>${esc(n)}</option>`).join("")}
+        </select>
+        <button class="btn" id="new-meeting">+ Nueva reunión</button>
+      </div>
+    </div>
+    <div id="meeting-form"></div>
+    ${pendientes.length ? `<div class="card" style="border-left:4px solid var(--accent)">
+      <h2>Pendientes</h2>
+      ${pendientes.map((m) => `<div class="small" style="padding:6px 0;border-top:1px solid var(--line)"><b>${esc(m.cliente || "Interna")}</b> <span class="muted">· ${esc(m.fecha)}</span><div style="white-space:pre-wrap">${esc(m.pendientes)}</div></div>`).join("")}
+    </div>` : ""}
+    ${list.length ? list.map((m) => `<div class="card meeting">
+      <div class="row"><h3>${esc(m.cliente || "Interna")}</h3>${m.tipo ? `<span class="tag">${esc(m.tipo)}</span>` : ""}<span class="spacer"></span><span class="muted small">${esc(m.fecha)}</span></div>
+      <div class="kv">
+        ${m.participantes ? `<b>Participantes</b><p>${esc(m.participantes)}</p>` : ""}
+        ${m.temas ? `<b>Temas</b><p>${esc(m.temas)}</p>` : ""}
+        ${m.decisiones ? `<b>Decisiones</b><p>${esc(m.decisiones)}</p>` : ""}
+        ${m.pendientes ? `<b>Pendientes</b><p>${esc(m.pendientes)}</p>` : ""}
+      </div>
+      ${/^https?:\/\//.test(m.minuta) ? `<p style="margin:10px 0 0"><a href="${esc(m.minuta)}" target="_blank" rel="noopener">Abrir minuta completa</a></p>` : ""}
+      ${m.cargo ? `<p class="small muted" style="margin:8px 0 0">Cargó ${esc(m.cargo)}</p>` : ""}
+    </div>`).join("") : `<div class="card muted">Todavía no hay reuniones cargadas.</div>`}`;
+  $("#mfilter").onchange = (e) => { state.meetingFilter = e.target.value; renderPage(); };
+  $("#new-meeting").onclick = showMeetingForm;
+}
+
+function showMeetingForm() {
+  const today = new Date().toISOString().slice(0, 10);
+  const box = $("#meeting-form");
+  box.innerHTML = `<form class="card" id="mform">
+    <h2>Nueva reunión</h2>
+    <div class="form-grid">
+      <div><label>Fecha</label><input type="date" name="fecha" value="${today}" required></div>
+      <div><label>Con quién</label><select name="cliente">${["Interna", ...state.clients.map((c) => c.name)].map((n) => `<option ${n === state.meetingFilter ? "selected" : ""}>${esc(n)}</option>`).join("")}</select></div>
+      <div><label>Tipo</label><select name="tipo"><option>Socias</option><option>Relevamiento</option><option>Reunión mensual</option><option>Otra</option></select></div>
+      <div><label>Participantes</label><input type="text" name="participantes"></div>
+      <div class="full"><label>Temas</label><textarea name="temas" rows="2"></textarea></div>
+      <div class="full"><label>Decisiones</label><textarea name="decisiones" rows="2"></textarea></div>
+      <div class="full"><label>Pendientes (quién hace qué)</label><textarea name="pendientes" rows="2"></textarea></div>
+      <div class="full"><label>Link a la minuta completa (Google Docs), si hay</label><input type="text" name="minuta" placeholder="https://docs.google.com/document/d/…"></div>
+    </div>
+    <div class="row" style="margin-top:12px"><button class="btn">Guardar</button><button type="button" class="btn ghost" id="mcancel">Cancelar</button></div>
+  </form>`;
+  $("#mcancel").onclick = () => (box.innerHTML = "");
+  $("#mform").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const f = new FormData(ev.target), btn = ev.target.querySelector("button");
+    btn.disabled = true;
+    const [y, m, d] = f.get("fecha").split("-");
+    const row = [`${+d}/${+m}/${y}`, f.get("cliente"), f.get("tipo"), f.get("participantes"), f.get("temas"),
+      f.get("decisiones"), f.get("pendientes"), f.get("minuta"), state.user?.given_name || ""];
+    try {
+      const tabs = await api().tabs(CFG.indiceId_active);
+      if (!tabs.includes("Reuniones")) {
+        await api().addTab(CFG.indiceId_active, "Reuniones");
+        await api().set(CFG.indiceId_active, tabRange("Reuniones", "A1:I1"),
+          [["Fecha", "Cliente", "Tipo", "Participantes", "Temas", "Decisiones", "Pendientes", "Minuta", "Cargó"]]);
+      }
+      await api().append(CFG.indiceId_active, tabRange("Reuniones", "A1:I1"), [row]);
+      await loadMeetings(true);
+      toast("Reunión guardada");
+      renderPage();
+    } catch (e) { btn.disabled = false; toast("No se pudo guardar: " + e.message); }
+  };
+  box.scrollIntoView({ behavior: "smooth" });
+}
+
+/* ---------- arranque ---------- */
+
+(function boot() {
+  state.page = recall("adm_page") || "inicio";
+  state.current = recall("adm_client");
+  const mode = recall("adm_mode");
+  const saved = recall("adm_token");
+  if (mode === "demo") return start("demo");
+  if (mode === "google" && CFG.googleClientId && saved && saved.exp > Date.now()) { token = saved; return start("google"); }
+  renderLogin();
+})();
+</script>
+</body>
+</html>
