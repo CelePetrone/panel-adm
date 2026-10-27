@@ -180,7 +180,9 @@
 "use strict";
 
 const CFG = window.PANEL_CONFIG || {};
-const SCOPES = "https://www.googleapis.com/auth/spreadsheets openid email profile";
+const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+const SCOPES = SHEETS_SCOPE + " openid email profile";
+const NO_SHEETS = "Falta el permiso para las planillas";
 const TABS = { checklist: "Checklist", relev: "Relevamiento", eval: "Evaluación interna", ficha: "Ficha del cliente" };
 const FICHA_HEADINGS = ["Datos generales", "Servicio contratado", "Equipo interno", "Calendario", "Datos operativos",
   "Accesos y confidencialidad", "Registro mensual", "Historial y observaciones"];
@@ -240,6 +242,9 @@ function requestToken(prompt) {
         callback: (resp) => {
           const waiters = tokenWaiters; tokenWaiters = [];
           if (resp.error) { waiters.forEach((w) => w.reject(new Error(resp.error))); return; }
+          if (!google.accounts.oauth2.hasGrantedAllScopes(resp, SHEETS_SCOPE)) {
+            waiters.forEach((w) => w.reject(new Error(NO_SHEETS))); return;
+          }
           token = { value: resp.access_token, exp: Date.now() + (resp.expires_in - 60) * 1000 };
           store("adm_token", token);
           waiters.forEach((w) => w.resolve(token.value));
@@ -266,7 +271,8 @@ async function gfetch(url, opts = {}, retry = true) {
   if (!res.ok) {
     let msg = res.status + "";
     try { const j = await res.json(); msg = j.error?.message || msg; } catch (e) {}
-    if (res.status === 403 || res.status === 404) msg = "No tenés acceso a esta planilla, o el link no es correcto. (" + msg + ")";
+    if (/insufficient authentication scopes/i.test(msg)) { token = null; store("adm_token"); msg = NO_SHEETS; }
+    else if (res.status === 403 || res.status === 404) msg = "No tenés acceso a esta planilla, o el link no es correcto. (" + msg + ")";
     throw new Error(msg);
   }
   return res.json();
@@ -445,11 +451,11 @@ function renderLogin(msg) {
         <button class="btn ghost" id="btn-demo" style="width:100%;margin-top:10px">Ver con datos de ejemplo</button>
       </div>
     </div>`;
-  if (hasGoogle) $("#btn-google").onclick = () => start("google", true);
+  if (hasGoogle) $("#btn-google").onclick = () => start("google", true, msg && msg.includes(NO_SHEETS));
   $("#btn-demo").onclick = () => start("demo");
 }
 
-async function start(mode, interactive) {
+async function start(mode, interactive, forceConsent) {
   state.mode = mode;
   state.cache = {}; state.meetings = null;
   CFG.indiceId_active = mode === "demo" ? "INDICE" : CFG.indiceId;
@@ -458,7 +464,7 @@ async function start(mode, interactive) {
   try {
     if (mode === "google") {
       if (!window.google?.accounts?.oauth2) await waitForGoogle();
-      if (interactive) await requestToken("");
+      if (interactive) await requestToken(forceConsent ? "consent" : "");
       state.user = await googleApi.me();
     } else {
       state.user = { given_name: "Demo" };
@@ -467,7 +473,9 @@ async function start(mode, interactive) {
     renderApp();
   } catch (e) {
     store("adm_mode"); store("adm_token"); token = null;
-    renderLogin("No se pudo entrar: " + e.message);
+    renderLogin(e.message.includes(NO_SHEETS)
+      ? NO_SHEETS + ". Tocá de nuevo Entrar con Google y, en la pantalla de Google, tildá la casilla de ver y editar tus hojas de cálculo."
+      : "No se pudo entrar: " + e.message);
   }
 }
 
