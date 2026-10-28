@@ -16,7 +16,16 @@ Es una sola página web publicada con GitHub Pages. Los datos no se guardan acá
 
 Para sumar un cliente nuevo: en Inicio, **+ Nuevo cliente**. El panel crea su planilla copiando el modelo **MODELO - Check list + relevamiento + ficha (no editar)**, que está en la carpeta "_Modelo de carpeta cliente". También agrega la fila en Clientes ADM. La planilla nueva queda en "Mi unidad" de quien la creó: hay que moverla a la carpeta del cliente para que la vean las demás socias.
 
-Si se cambia el modelo (por ejemplo, una tarea nueva en el checklist), los clientes nuevos salen con el cambio. Los que ya existen no se tocan.
+### Cambiar el modelo
+
+Los cambios se hacen directamente en la planilla **MODELO** de Drive (agregar o sacar una tarea, una pregunta, una fila de la ficha). Los clientes nuevos salen con el cambio automáticamente.
+
+Para pasar el cambio a los clientes que ya existen: en Inicio, **Actualizar desde el modelo**. Antes de tocar nada, el panel muestra qué se agrega y qué ya no está en cada cliente. Al confirmar:
+
+- Cada planilla queda con las mismas pestañas y filas que el modelo, en el mismo archivo y la misma carpeta.
+- Lo que ya habían cargado (tildes, responsables, respuestas, nombres) se vuelve a poner en su fila, buscándola por el texto de la columna A (en el checklist, por la etapa y la tarea).
+- Si una fila ya no está en el modelo, o se cambió su texto, sus datos no pasan a la versión nueva. Por las dudas, la planilla como estaba queda en pestañas ocultas que empiezan con **Anterior ·** (en Sheets: menú Ver › Hojas ocultas). Cada vez que se actualiza, esas copias se reemplazan por las nuevas.
+- Las pestañas que no están en el modelo no se tocan.
 
 ## Probarlo sin conectar nada
 

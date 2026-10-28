@@ -146,6 +146,9 @@
   .login .card { text-align: left; }
 
   .banner { background: var(--accent-soft); color: #7A3B1C; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 14px; }
+  .sync-client { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
+  .sync-client h3 { margin: 0 0 4px; }
+  .sync-list { margin: 4px 0 8px; padding-left: 20px; font-size: 14px; }
   .error { background: #FDECEC; color: #8A1C1C; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 14px; }
   .loading { color: var(--muted); padding: 30px 0; }
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 14px; z-index: 20; }
@@ -183,6 +186,7 @@ const CFG = window.PANEL_CONFIG || {};
 const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 const SCOPES = SHEETS_SCOPE + " openid email profile";
 const NO_SHEETS = "Falta el permiso para las planillas";
+const BACKUP = "Anterior · ";   // prefijo de las pestañas ocultas que guardan cómo estaba la planilla antes de actualizarla
 const TABS = { checklist: "Checklist", relev: "Relevamiento", eval: "Evaluación interna", ficha: "Ficha del cliente" };
 const FICHA_HEADINGS = ["Datos generales", "Servicio contratado", "Equipo interno", "Calendario", "Datos operativos",
   "Accesos y confidencialidad", "Registro mensual", "Historial y observaciones"];
@@ -212,6 +216,8 @@ const state = {
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const txt = (v) => String(v ?? "").trim();
+const norm = (v) => txt(v).toLowerCase().replace(/\s+/g, " ");
+const filled = (v) => v !== "" && v !== null && v !== undefined && v !== false;
 const isTrue = (v) => v === true || /^(true|verdadero|sí|si|x)$/i.test(txt(v));
 const colLetter = (n) => { let s = ""; n++; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
 const tabRange = (tab, a1) => `'${tab.replace(/'/g, "''")}'!${a1}`;
@@ -285,9 +291,9 @@ const googleApi = {
     const j = await gfetch(SHEETS + id + "?fields=sheets.properties.title");
     return j.sheets.map((s) => s.properties.title);
   },
-  async get(id, range) {
+  async get(id, range, formulas) {
     const j = await gfetch(SHEETS + id + "/values/" + encodeURIComponent(range) +
-      "?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING");
+      "?valueRenderOption=" + (formulas ? "FORMULA" : "UNFORMATTED_VALUE") + "&dateTimeRenderOption=FORMATTED_STRING");
     return j.values || [];
   },
   async set(id, range, values) {
@@ -326,6 +332,40 @@ const googleApi = {
       requests: tabs.map((t, i) => ({ updateSheetProperties: { properties: { sheetId: t.newId, index: i }, fields: "index" } })) }) });
     return id;
   },
+  async info(id) {
+    const j = await gfetch(SHEETS + id + "?fields=sheets.properties(sheetId,title,index)");
+    return j.sheets.map((s) => s.properties).sort((a, b) => a.index - b.index);
+  },
+  // Rehace las pestañas del modelo dentro de una planilla que ya existe: mismo archivo, misma carpeta, mismos permisos.
+  // Las pestañas como estaban quedan ocultas como "Anterior · …" (se reemplazan las de la vez anterior).
+  // writes: lo que ya habían cargado, para escribir sobre las pestañas nuevas.
+  async rebuild(templateId, id, writes) {
+    const batch = (requests) => gfetch(SHEETS + id + ":batchUpdate", { method: "POST", body: JSON.stringify({ requests }) });
+    const tpl = (await this.info(templateId)).filter((t) => !t.title.startsWith(BACKUP));
+    const titles = tpl.map((t) => t.title);
+    const before = await this.info(id);
+    const old = before.filter((t) => t.title.startsWith(BACKUP)).map((t) => ({ deleteSheet: { sheetId: t.sheetId } }));
+    const rename = before.filter((t) => titles.includes(t.title))
+      .map((t) => ({ updateSheetProperties: { properties: { sheetId: t.sheetId, title: BACKUP + t.title }, fields: "title" } }));
+    if (old.length || rename.length) await batch([...old, ...rename]);
+    // Resumen al final, para que sus fórmulas apunten a las pestañas nuevas.
+    for (const t of [...tpl.filter((t) => t.title !== "Resumen"), ...tpl.filter((t) => t.title === "Resumen")]) {
+      const copy = await gfetch(SHEETS + templateId + "/sheets/" + t.sheetId + ":copyTo",
+        { method: "POST", body: JSON.stringify({ destinationSpreadsheetId: id }) });
+      await batch([{ updateSheetProperties: { properties: { sheetId: copy.sheetId, title: t.title }, fields: "title" } }]);
+    }
+    if (writes.length) await gfetch(SHEETS + id + "/values:batchUpdate",
+      { method: "POST", body: JSON.stringify({ valueInputOption: "USER_ENTERED", data: writes }) });
+    // Orden del modelo primero, después las otras pestañas, y las copias ocultas.
+    const after = await this.info(id);
+    const rest = after.filter((a) => !titles.includes(a.title));
+    const order = [...titles.map((ti) => after.find((a) => a.title === ti)),
+      ...rest.filter((a) => !a.title.startsWith(BACKUP)), ...rest.filter((a) => a.title.startsWith(BACKUP))];
+    await batch(order.map((t, i) => {
+      const hide = t.title.startsWith(BACKUP);
+      return { updateSheetProperties: { properties: { sheetId: t.sheetId, index: i, ...(hide ? { hidden: true } : {}) }, fields: hide ? "index,hidden" : "index" } };
+    }));
+  },
 };
 
 // Versión de ejemplo: misma interfaz, pero todo queda en memoria.
@@ -336,12 +376,20 @@ function parseA1(range) {
   return { tab: m[1].replace(/''/g, "'"), c1: num(m[2]), r1: +m[3] - 1, c2: m[4] ? num(m[4]) : num(m[2]), r2: m[5] ? +m[5] - 1 : +m[3] - 1 };
 }
 function demoBook(id) {
-  if (!demoDb[id]) demoDb[id] = JSON.parse(JSON.stringify(window.DEMO_DATA.DEMO_B));
+  if (!demoDb[id]) demoDb[id] = JSON.parse(JSON.stringify(demoDb.DEMO_MODELO));
   return demoDb[id];
+}
+// Modelo de ejemplo con una tarea nueva y otra quitada, para ver cómo funciona "Actualizar desde el modelo".
+if (window.DEMO_DATA) {
+  const m = JSON.parse(JSON.stringify(window.DEMO_DATA.DEMO_B)), chk = m.Checklist;
+  chk[1][1] = "";
+  chk.splice(chk.findIndex((r) => txt(r[1]) === "Los textos no tienen errores"), 1);
+  chk.splice(chk.findIndex((r) => txt(r[1]) === "Imputaciones revisadas por Contable") + 1, 0, ["", " Copia de seguridad de los archivos del mes"]);
+  demoDb.DEMO_MODELO = m;
 }
 const demoApi = {
   async tabs(id) { return Object.keys(demoBook(id)); },
-  async get(id, range) {
+  async get(id, range, formulas) {
     const p = parseA1(range), rows = demoBook(id)[p.tab];
     if (!rows) throw new Error("No existe la pestaña " + p.tab);
     return rows.slice(p.r1, p.r2 + 1).map((r) => (r || []).slice(p.c1, p.c2 + 1));
@@ -359,12 +407,20 @@ const demoApi = {
   async me() { return { given_name: "Demo" }; },
   async createFromTemplate(templateId, title) {
     const id = "DEMO_" + Date.now();
-    demoDb[id] = JSON.parse(JSON.stringify(window.DEMO_DATA.DEMO_B));
+    demoDb[id] = JSON.parse(JSON.stringify(demoBook(templateId)));
     return id;
+  },
+  async rebuild(templateId, id, writes) {
+    const tpl = demoBook(templateId), old = demoBook(id), book = {};
+    Object.keys(tpl).forEach((t) => { if (!t.startsWith(BACKUP)) book[t] = JSON.parse(JSON.stringify(tpl[t])); });
+    Object.keys(old).forEach((t) => { if (!t.startsWith(BACKUP)) book[book[t] ? BACKUP + t : t] = old[t]; });
+    demoDb[id] = book;
+    for (const w of writes) await this.set(id, w.range, w.values);
   },
 };
 
 const api = () => (state.mode === "demo" ? demoApi : googleApi);
+const templateId = () => (state.mode === "demo" ? "DEMO_MODELO" : CFG.plantillaId);
 
 /* ---------- lectura de las planillas ---------- */
 
@@ -653,6 +709,7 @@ async function pageInicio(el) {
       <div class="row">
         ${state.mode === "google" ? `<a class="btn ghost small" href="${sheetUrl(CFG.indiceId)}" target="_blank" rel="noopener">Abrir planilla índice</a>` : ""}
         <button class="btn ghost small" id="reload">Actualizar</button>
+        ${CFG.plantillaId && state.clients.some((c) => c.sheetId) ? `<button class="btn ghost small" id="sync">Actualizar desde el modelo</button>` : ""}
         <button class="btn small" id="new-client">+ Nuevo cliente</button>
       </div>
     </div>
@@ -669,6 +726,7 @@ async function pageInicio(el) {
   el.querySelectorAll("[data-link]").forEach((f) => (f.onsubmit = (ev) => { ev.preventDefault(); linkSheet(f.dataset.link, f.querySelector("input").value); }));
   el.querySelectorAll("[data-create]").forEach((b) => (b.onclick = () => createSheetFor(b.dataset.create, b)));
   $("#new-client").onclick = showClientForm;
+  if ($("#sync")) $("#sync").onclick = showSync;
 }
 
 function clientCard(c, book) {
@@ -748,7 +806,7 @@ function showClientForm() {
 }
 
 async function newClientSheet(name) {
-  const id = await api().createFromTemplate(CFG.plantillaId, `${name} - Check list + relevamiento + ficha`);
+  const id = await api().createFromTemplate(templateId(), `${name} - Check list + relevamiento + ficha`);
   // Nombre del cliente en los encabezados y fechas en blanco.
   for (const tab of [TABS.checklist, TABS.relev]) {
     try { await api().set(id, tabRange(tab, "B2:B3"), [[name], [""]]); } catch (e) {}
@@ -786,6 +844,137 @@ async function linkSheet(name, link) {
   await api().set(CFG.indiceId_active, tabRange(state.indexTab, colLetter(col) + c.row), [[sheetUrl(id)]]);
   await loadIndex();
   toast("Planilla vinculada");
+  renderPage();
+}
+
+/* ---------- Actualizar clientes desde el modelo ---------- */
+
+const syncRange = (tab) => tabRange(tab, tab === TABS.checklist ? "A1:AI300" : "A1:Z300");
+
+async function readTemplate() {
+  const id = templateId(), out = {};
+  for (const tab of (await api().tabs(id)).filter((t) => !t.startsWith(BACKUP))) {
+    const [values, formulas] = await Promise.all([api().get(id, syncRange(tab)), api().get(id, syncRange(tab), true)]);
+    out[tab] = { values, formulas };
+  }
+  return out;
+}
+
+// Le pone una clave a cada fila para encontrarla en la otra planilla: el texto de la columna A,
+// o en el checklist la etapa y la tarea. Las filas en blanco del modelo (por ejemplo, para anotar
+// participantes) se reconocen por su lugar debajo de la última fila conocida.
+function rowKeys(tab, rows, known) {
+  const isChk = tab === TABS.checklist, seen = {};
+  let header = false, stage = "", anchor = "inicio", gap = 0;
+  return rows.map((r) => {
+    r = r || [];
+    const a = norm(r[0]), b = norm(r[1]);
+    if (isChk && header && a && !b) stage = a;
+    const base = isChk && header && b ? "t:" + stage + "|" + b : a ? "a:" + a : "";
+    if (isChk && a === "etapa" && b === "tarea") header = true;
+    gap++;
+    if (!base || (known && !known.has(base) && !isChk)) return { key: "s:" + anchor + "+" + gap, from: 0, label: "" };
+    seen[base] = (seen[base] || 0) + 1;
+    const key = seen[base] > 1 ? base + "#" + seen[base] : base;
+    anchor = key; gap = 0;
+    return { key, base, from: base.startsWith("t:") ? 2 : 1, label: txt(base.startsWith("t:") ? r[1] : r[0]) };
+  });
+}
+
+// Compara una pestaña del cliente con la del modelo: qué hay que volver a escribir, qué es nuevo y qué ya no está.
+function diffTab(tab, oldRows, tpl, plan) {
+  const tk = rowKeys(tab, tpl.values, null);
+  const where = new Map(tk.map((k, i) => [k.key, i]));
+  const matched = new Set();
+  rowKeys(tab, oldRows, new Set(tk.map((k) => k.base))).forEach((k, i) => {
+    const r = oldRows[i] || [], j = where.get(k.key);
+    if (j === undefined) {
+      const label = k.label || txt(r[0]), data = r.slice(Math.max(k.from, 1)).some(filled);
+      if (label || data) plan.removed.push({ tab, label: label || txt(r.find(filled)), data });
+      return;
+    }
+    matched.add(k.key);
+    r.forEach((v, c) => {
+      if (c < k.from || !filled(v)) return;
+      const f = tpl.formulas[j]?.[c];
+      if (typeof f === "string" && f.startsWith("=")) return;   // las fórmulas del modelo no se pisan
+      if (String(v) === String(tpl.values[j]?.[c] ?? "")) return;
+      plan.writes.push({ range: tabRange(tab, colLetter(c) + (j + 1)), values: [[v]] });
+    });
+  });
+  tk.forEach((k) => { if (k.label && !matched.has(k.key)) plan.added.push({ tab, label: k.label }); });
+}
+
+async function planSync(client, tpl) {
+  const have = await api().tabs(client.sheetId);
+  const plan = { client, writes: [], added: [], removed: [] };
+  for (const [tab, t] of Object.entries(tpl)) {
+    if (!have.includes(tab)) { plan.added.push({ tab, label: "pestaña nueva" }); continue; }
+    diffTab(tab, await api().get(client.sheetId, syncRange(tab)), t, plan);
+  }
+  return plan;
+}
+
+function syncList(items, more) {
+  const shown = items.slice(0, 8).map((x) => `<li><span class="muted">${esc(x.tab)}:</span> ${esc(x.label)}${more ? more(x) : ""}</li>`).join("");
+  return `<ul class="sync-list">${shown}${items.length > 8 ? `<li class="muted">y ${items.length - 8} más</li>` : ""}</ul>`;
+}
+
+async function showSync() {
+  const box = $("#client-form");
+  box.innerHTML = `<div class="card"><h2>Actualizar desde el modelo</h2><p class="small muted">Comparando cada planilla con el modelo…</p></div>`;
+  box.scrollIntoView({ behavior: "smooth" });
+  let plans;
+  try {
+    const tpl = await readTemplate();
+    plans = [];
+    for (const c of state.clients.filter((x) => x.sheetId)) plans.push(await planSync(c, tpl).catch((e) => ({ client: c, error: e.message })));
+  } catch (e) {
+    box.innerHTML = `<div class="card"><h2>Actualizar desde el modelo</h2><p class="error">No se pudo leer el modelo: ${esc(e.message)}</p></div>`;
+    return;
+  }
+  const ok = plans.filter((p) => !p.error);
+  box.innerHTML = `<div class="card">
+    <h2>Actualizar desde el modelo</h2>
+    <p class="small muted" style="margin-top:-6px">Las planillas de los clientes quedan con la misma estructura que el modelo. Lo que ya cargaron se mantiene.
+      Por las dudas, cómo estaba cada planilla queda guardado en pestañas ocultas que empiezan con "Anterior".</p>
+    ${plans.map((p) => `<div class="sync-client"><h3>${esc(p.client.name)}</h3>
+      ${p.error ? `<p class="error small">${esc(p.error)}</p>`
+        : !p.added.length && !p.removed.length ? `<p class="small muted" style="margin:0">Ya tiene la misma estructura que el modelo.</p>`
+        : (p.added.length ? `<div class="small"><b>Se agrega (${p.added.length})</b></div>${syncList(p.added)}` : "") +
+          (p.removed.length ? `<div class="small"><b>Ya no está en el modelo (${p.removed.length})</b></div>${syncList(p.removed, (x) => (x.data ? ` <span class="tag accent">tenía datos</span>` : ""))}` : "")}
+    </div>`).join("")}
+    ${ok.some((p) => p.removed.some((x) => x.data)) ? `<p class="small muted">Lo marcado "tenía datos" no se pierde: queda en las pestañas "Anterior".</p>` : ""}
+    <div class="row" style="margin-top:14px">
+      ${ok.length ? `<button class="btn" id="sync-go">Actualizar ${ok.length === 1 ? "1 planilla" : ok.length + " planillas"}</button>` : ""}
+      <button class="btn ghost" id="sync-cancel">Cancelar</button><span class="small muted" id="sync-status"></span>
+    </div>
+  </div>`;
+  $("#sync-cancel").onclick = () => (box.innerHTML = "");
+  if ($("#sync-go")) $("#sync-go").onclick = () => applySync(ok.map((p) => p.client));
+}
+
+async function applySync(clients) {
+  if (!confirm(`¿Actualizar ${clients.map((c) => c.name).join(" y ")} con el modelo?`)) return;
+  $("#sync-go").disabled = true; $("#sync-cancel").disabled = true;
+  const status = $("#sync-status"), failed = [];
+  try {
+    const tpl = await readTemplate();
+    for (const c of clients) {
+      status.textContent = `Actualizando ${c.name}… (unos segundos)`;
+      try {
+        const plan = await planSync(c, tpl);   // se vuelve a leer justo antes, por si alguien cargó algo recién
+        await api().rebuild(templateId(), c.sheetId, plan.writes);
+      } catch (e) { failed.push(c.name + ": " + e.message); }
+    }
+  } catch (e) { failed.push("No se pudo leer el modelo: " + e.message); }
+  state.cache = {};
+  if (failed.length) {
+    status.innerHTML = `<span class="error" style="display:block;margin:10px 0 0">No se pudo actualizar ${esc(failed.join(" · "))}</span>`;
+    $("#sync-cancel").disabled = false;
+    return;
+  }
+  toast("Listo, planillas actualizadas");
   renderPage();
 }
 
