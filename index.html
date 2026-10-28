@@ -167,13 +167,14 @@
 
   /* Reuniones */
   .meet-grid { display: grid; grid-template-columns: minmax(240px, 1fr) 2fr; gap: 16px; align-items: start; }
+  .meet-grid > * { min-width: 0; }
   #mlist { max-height: 60vh; overflow-y: auto; }
   .meet-item { display: block; width: 100%; text-align: left; background: none; border: 0; border-top: 1px solid var(--line); padding: 9px 8px; cursor: pointer; font: inherit; font-size: 14px; color: var(--ink); border-radius: 0; }
   .meet-item:hover { background: var(--bg); }
   .meet-item.on { background: var(--primary-soft); border-radius: 8px; border-top-color: transparent; }
   .meet-date { font-weight: 700; }
   .meet-topic { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .meeting { border-left: 4px solid var(--primary); }
+  .meeting { border-left: 4px solid var(--primary); overflow-wrap: anywhere; }
   .meeting h3 { margin: 0; font-size: 16px; }
   .mblock { margin-top: 16px; --mc: var(--primary); --ms: var(--primary-soft); }
   .mblock.mb-dec { --mc: var(--ok); --ms: var(--ok-soft); }
@@ -219,7 +220,7 @@
     .paso-main { padding-right: 26px; }
     .paso-del { position: absolute; top: 8px; right: 0; }
     .form-grid { grid-template-columns: 1fr; }
-    .meet-grid { grid-template-columns: 1fr; }
+    .meet-grid { grid-template-columns: minmax(0, 1fr); }
     #mlist { max-height: 40vh; }
     .stage-head .bar { width: 70px; }
     table.reg tr > th:first-child { width: 120px; min-width: 120px; }
