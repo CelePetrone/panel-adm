@@ -91,22 +91,17 @@
   .client-card dt { color: var(--muted); }
   .client-card dd { margin: 0; }
 
-  /* Calendario del mes: de abajo (día 1) para arriba */
-  .home-grid { display: grid; grid-template-columns: minmax(250px, 1fr) 1.7fr; gap: 16px; align-items: start; }
-  .vline { margin-top: 8px; }
-  .vstep { display: grid; grid-template-columns: 52px 12px 1fr; gap: 0 12px; min-height: 64px; }
-  .vday { font-size: 12px; color: var(--muted); text-align: right; padding-top: 8px; }
-  .vday b { color: var(--primary); font-size: 14px; }
-  .vbar { position: relative; background: var(--line); }
-  .vstep:first-child .vbar { border-radius: 99px 99px 0 0; }
-  .vstep:last-child .vbar { border-radius: 0 0 99px 99px; }
-  .vstep.past .vbar, .vstep.now .vbar { background: var(--c); }
-  .vstep.now .vbar { background: linear-gradient(to top, var(--c) var(--fill), var(--line) var(--fill)); }
-  .vbar .today { position: absolute; left: 50%; bottom: var(--fill); width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; transform: translate(-50%, 50%); box-shadow: 0 1px 3px rgba(0,0,0,.25); }
-  .vtext { font-size: 13px; padding: 6px 0 12px; }
-  .vtext b { display: block; font-size: 14px; }
-  .vstep.now .vtext b { color: var(--accent); }
-  .vstep.future .vtext { opacity: .75; }
+  /* Calendario del mes */
+  .month { position: relative; height: 54px; margin: 8px 4px 4px; }
+  .month .track { position: absolute; left: 0; right: 0; top: 22px; height: 10px; border-radius: 99px; background: var(--line); }
+  .month .seg { position: absolute; top: 22px; height: 10px; }
+  .month .mark { position: absolute; top: 0; transform: translateX(-50%); font-size: 12px; font-weight: 700; color: var(--primary); text-align: center; }
+  .month .mark::after { content: ""; display: block; width: 2px; height: 30px; margin: 2px auto 0; background: var(--primary); }
+  .month .today { position: absolute; top: 18px; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; transform: translateX(-50%); box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+  .phases { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 12px; }
+  .phase { padding: 10px; border-radius: 8px; background: var(--bg); font-size: 13px; }
+  .phase b { display: block; font-size: 13px; }
+  .phase.now { background: var(--accent-soft); outline: 2px solid var(--accent); }
 
   /* Próximos pasos */
   .paso { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0 10px 12px; border-top: 1px solid var(--line); border-left: 4px solid var(--st); }
@@ -125,6 +120,8 @@
   .paso-add .row { grid-column: 1 / -1; }
   select.paso-cliente { width: auto; max-width: 100%; padding: 2px 8px; font-size: 12px; font-weight: 600; border-radius: 99px; border: 0; background: var(--primary-soft); color: var(--primary); cursor: pointer; }
   select.paso-cliente.interna { background: #EFEDE8; color: var(--muted); }
+  .paso-del { border: 0; background: none; color: var(--muted); font-size: 20px; line-height: 1; padding: 0 4px; cursor: pointer; align-self: flex-start; }
+  .paso-del:hover { color: #8A1C1C; }
   details.listos summary { cursor: pointer; font-size: 14px; color: var(--muted); padding: 10px 0 4px; border-top: 1px solid var(--line); }
 
   /* Checklist */
@@ -190,8 +187,12 @@
     main { padding: 18px 16px 90px; }
     .field { grid-template-columns: 1fr; gap: 4px; }
     .field .lbl { padding-top: 0; }
-    .home-grid { grid-template-columns: 1fr; }
-    .home-grid .pasos-col { order: -1; }
+    .phases { grid-template-columns: 1fr 1fr; }
+    .paso { flex-wrap: wrap; }
+    .paso-ctrl { flex-direction: row; align-items: center; width: 100%; justify-content: space-between; }
+    .paso { position: relative; }
+    .paso-main { padding-right: 26px; }
+    .paso-del { position: absolute; top: 8px; right: 0; }
     .form-grid { grid-template-columns: 1fr; }
     .stage-head .bar { width: 70px; }
     select.client-select { width: 100%; }
@@ -296,10 +297,14 @@ async function getToken() {
   return requestToken("");
 }
 
-async function gfetch(url, opts = {}, retry = true) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function gfetch(url, opts = {}, retry = true, waits = 0) {
   const t = await getToken();
   const res = await fetch(url, { ...opts, headers: { Authorization: "Bearer " + t, "Content-Type": "application/json", ...(opts.headers || {}) } });
-  if (res.status === 401 && retry) { token = null; store("adm_token"); return gfetch(url, opts, false); }
+  if (res.status === 401 && retry) { token = null; store("adm_token"); return gfetch(url, opts, false, waits); }
+  // Google limita las consultas por minuto: si se pasa, espera y vuelve a probar.
+  if (res.status === 429 && waits < 3) { await sleep(15000 * (waits + 1)); return gfetch(url, opts, retry, waits + 1); }
+  if (res.status === 429) throw new Error("Google pidió esperar: hubo demasiadas consultas seguidas. Tocá Actualizar en un minuto.");
   if (!res.ok) {
     let msg = res.status + "";
     try { const j = await res.json(); msg = j.error?.message || msg; } catch (e) {}
@@ -312,10 +317,22 @@ async function gfetch(url, opts = {}, retry = true) {
 
 const SHEETS = "https://sheets.googleapis.com/v4/spreadsheets/";
 
+// Pestañas de cada planilla, guardadas para no preguntarle a Google cada vez.
+const tabsCache = {};
+const forgetTabs = (id) => (id ? delete tabsCache[id] : Object.keys(tabsCache).forEach((k) => delete tabsCache[k]));
+
 const googleApi = {
   async tabs(id) {
-    const j = await gfetch(SHEETS + id + "?fields=sheets.properties.title");
-    return j.sheets.map((s) => s.properties.title);
+    if (!tabsCache[id]) tabsCache[id] = gfetch(SHEETS + id + "?fields=sheets.properties.title")
+      .then((j) => j.sheets.map((s) => s.properties.title)).catch((e) => { delete tabsCache[id]; throw e; });
+    return tabsCache[id];
+  },
+  // Varias partes de la misma planilla en una sola consulta.
+  async getMany(id, ranges, formulas) {
+    if (!ranges.length) return [];
+    const j = await gfetch(SHEETS + id + "/values:batchGet?" + ranges.map((r) => "ranges=" + encodeURIComponent(r)).join("&") +
+      "&valueRenderOption=" + (formulas ? "FORMULA" : "UNFORMATTED_VALUE") + "&dateTimeRenderOption=FORMATTED_STRING");
+    return j.valueRanges.map((v) => v.values || []);
   },
   async get(id, range, formulas) {
     const j = await gfetch(SHEETS + id + "/values/" + encodeURIComponent(range) +
@@ -331,6 +348,7 @@ const googleApi = {
       { method: "POST", body: JSON.stringify({ values }) });
   },
   async addTab(id, title) {
+    forgetTabs(id);
     await gfetch(SHEETS + id + ":batchUpdate", { method: "POST", body: JSON.stringify({ requests: [{ addSheet: { properties: { title } } }] }) });
   },
   async me() {
@@ -366,6 +384,7 @@ const googleApi = {
   // Las pestañas como estaban quedan ocultas como "Anterior · …" (se reemplazan las de la vez anterior).
   // writes: lo que ya habían cargado, para escribir sobre las pestañas nuevas.
   async rebuild(templateId, id, writes) {
+    forgetTabs(id);
     const batch = (requests) => gfetch(SHEETS + id + ":batchUpdate", { method: "POST", body: JSON.stringify({ requests }) });
     const tpl = (await this.info(templateId)).filter((t) => !t.title.startsWith(BACKUP));
     const titles = tpl.map((t) => t.title);
@@ -415,6 +434,7 @@ if (window.DEMO_DATA) {
 }
 const demoApi = {
   async tabs(id) { return Object.keys(demoBook(id)); },
+  async getMany(id, ranges) { return Promise.all(ranges.map((r) => this.get(id, r))); },
   async get(id, range, formulas) {
     const p = parseA1(range), rows = demoBook(id)[p.tab];
     if (!rows) throw new Error("No existe la pestaña " + p.tab);
@@ -477,10 +497,10 @@ async function loadClientBook(client, force) {
   if (state.cache[client.sheetId] && !force) return state.cache[client.sheetId];
   const id = client.sheetId;
   const tabs = await api().tabs(id);
-  const grab = (tab, range) => (tabs.includes(tab) ? api().get(id, tabRange(tab, range)) : Promise.resolve(null));
-  const [chk, rel, ev, fi] = await Promise.all([
-    grab(TABS.checklist, "A1:D120"), grab(TABS.relev, "A1:B120"), grab(TABS.eval, "A1:B60"), grab(TABS.ficha, "A1:F120"),
-  ]);
+  const want = [[TABS.checklist, "A1:D120"], [TABS.relev, "A1:B120"], [TABS.eval, "A1:B60"], [TABS.ficha, "A1:F120"]];
+  const have = want.filter(([tab]) => tabs.includes(tab));
+  const got = await api().getMany(id, have.map(([tab, a1]) => tabRange(tab, a1)));
+  const [chk, rel, ev, fi] = want.map((w) => (have.includes(w) ? got[have.indexOf(w)] : null));
   const book = { id, checklist: parseChecklist(chk), relev: parseForm(rel, "relev"), eval: parseForm(ev, "eval"), ficha: parseForm(fi, "ficha") };
   state.cache[id] = book;
   return book;
@@ -576,7 +596,7 @@ function renderLogin(msg) {
 
 async function start(mode, interactive, forceConsent) {
   state.mode = mode;
-  state.cache = {}; state.meetings = null; state.pasos = null;
+  state.cache = {}; state.meetings = null; state.pasos = null; forgetTabs();
   CFG.indiceId_active = mode === "demo" ? "INDICE" : CFG.indiceId;
   store("adm_mode", mode);
   $("#root").innerHTML = `<div class="login"><p class="loading">Cargando…</p></div>`;
@@ -694,32 +714,32 @@ function monthCard() {
   const now = new Date();
   const day = now.getDate();
   const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const mes = now.toLocaleDateString("es-AR", { month: "long" });
-  const colors = ["#C9D6E6", "#AFC3DB", "#2F4B6E", "#D9B79F", "#C36A3D", "#B9C7B2"];
-  const steps = [...PHASES, { from: 18, to: last, name: "Preparación", text: "Revisar pendientes y preparar el próximo cierre." }];
-  const dayLabel = (p) => (p.from === p.to ? `<b>${p.from}</b>` : `${[5, 10, 15].includes(p.from) ? `<b>${p.from}</b>` : p.from} a ${[5, 10, 15].includes(p.to) ? `<b>${p.to}</b>` : p.to}`);
+  const pct = (d) => ((d - 1) / (last - 1)) * 100;
+  const ph = phaseFor(day);
+  const mes = now.toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+  const colors = ["#C9D6E6", "#AFC3DB", "#2F4B6E", "#D9B79F", "#C36A3D"];
   return `<div class="card">
-    <h2 style="margin:0">Cómo viene el mes</h2>
-    <p class="muted small" style="margin:4px 0 0">Hoy es ${day} de ${esc(mes)}</p>
-    <div class="vline">
-      ${steps.map((p, i) => {
-        const when = day > p.to ? "past" : day < p.from ? "future" : "now";
-        const fill = Math.round(((day - p.from + 0.5) / (p.to - p.from + 1)) * 100);
-        return `<div class="vstep ${when}" style="--c:${colors[i]};--fill:${fill}%">
-          <div class="vday">${dayLabel(p)}</div>
-          <div class="vbar">${when === "now" ? `<span class="today" title="Hoy"></span>` : ""}</div>
-          <div class="vtext"><b>${esc(p.name)}</b><span class="muted">${esc(p.text)}</span></div>
-        </div>`;
-      }).reverse().join("")}
+    <div class="row"><h2 style="margin:0">Cómo viene el mes</h2><span class="spacer"></span><span class="muted small">Hoy es ${day} de ${esc(mes)}</span></div>
+    <div class="month">
+      <div class="track"></div>
+      ${PHASES.map((p, i) => `<div class="seg" style="left:${pct(p.from)}%;width:${Math.max(pct(p.to + 1) - pct(p.from), 1)}%;background:${colors[i]}"></div>`).join("")}
+      ${[5, 10, 15].map((d) => `<div class="mark" style="left:${pct(d)}%">${d}</div>`).join("")}
+      <div class="today" style="left:${pct(day)}%" title="Hoy"></div>
     </div>
+    <div class="phases">
+      ${PHASES.map((p, i) => `<div class="phase ${i === ph ? "now" : ""}"><b>${p.from === p.to ? "Día " + p.from : "Días " + p.from + " a " + p.to}</b>${p.name}<div class="muted">${p.text}</div></div>`).join("")}
+    </div>
+    ${ph < 0 ? `<p class="muted small" style="margin-bottom:0">Ya pasó la reunión del mes: buen momento para preparar el próximo cierre.</p>` : ""}
   </div>`;
 }
+
 
 /* Próximos pasos: viven en la pestaña "Próximos pasos" de la planilla de reuniones.
    Los pendientes de cada minuta se pasan solos la primera vez que se abre el panel después de cargarla. */
 const PASOS_TAB = "Próximos pasos";
 const PASOS_HEAD = ["Paso", "Cliente", "Responsables", "Estado", "Origen", "Fecha"];
 const ESTADOS = [{ name: "Pendiente", cls: "st-pend" }, { name: "En proceso", cls: "st-proc" }, { name: "Listo", cls: "st-listo" }];
+const BORRADO = "Borrado";
 const estadoDe = (v) => ESTADOS.find((e) => e.name.toLowerCase() === txt(v).toLowerCase()) || ESTADOS[0];
 const hoyTexto = () => { const d = new Date(); return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`; };
 
@@ -742,7 +762,7 @@ async function loadPasos(force) {
   const place = await meetingsPlace();
   const read = async () => (await api().get(place.id, tabRange(PASOS_TAB, "A1:F1000"))).slice(1).map((r, i) => ({
     row: i + 2, text: txt(r[0]), cliente: txt(r[1]) || "Interna", resp: txt(r[2]).split(/\s*,\s*/).filter(Boolean),
-    estado: estadoDe(r[3]).name, origen: txt(r[4]), fecha: txt(r[5]),
+    estado: txt(r[3]).toLowerCase() === BORRADO.toLowerCase() ? BORRADO : estadoDe(r[3]).name, origen: txt(r[4]), fecha: txt(r[5]),
   })).filter((p) => p.text);
   if (!(await api().tabs(place.id)).includes(PASOS_TAB)) {
     await api().addTab(place.id, PASOS_TAB);
@@ -786,6 +806,7 @@ function pasoHtml(p) {
       <select class="estado ${st.cls}" aria-label="Estado">${ESTADOS.map((e) => `<option ${e.name === st.name ? "selected" : ""}>${e.name}</option>`).join("")}</select>
       ${chipsHtml(p.resp)}
     </div>
+    <button type="button" class="paso-del" title="Borrar este paso" aria-label="Borrar este paso">×</button>
   </div>`;
 }
 
@@ -793,8 +814,9 @@ function renderPasos(box) {
   const data = state.pasos;
   if (!data || !box) return;
   const orden = { "En proceso": 0, Pendiente: 1 };
-  const abiertos = data.list.filter((p) => p.estado !== "Listo").sort((a, b) => orden[a.estado] - orden[b.estado] || a.row - b.row);
-  const listos = data.list.filter((p) => p.estado === "Listo").reverse();
+  const visibles = data.list.filter((p) => p.estado !== BORRADO);
+  const abiertos = visibles.filter((p) => p.estado !== "Listo").sort((a, b) => orden[a.estado] - orden[b.estado] || a.row - b.row);
+  const listos = visibles.filter((p) => p.estado === "Listo").reverse();
   box.innerHTML = `<div class="card">
     <div class="row"><h2 style="margin:0">Próximos pasos</h2><span class="spacer"></span>
       ${state.mode === "google" ? `<a class="small" href="${sheetUrl(data.place.id)}" target="_blank" rel="noopener">Abrir planilla</a>` : ""}</div>
@@ -821,6 +843,10 @@ function renderPasos(box) {
   }));
   box.querySelectorAll(".paso select.paso-cliente").forEach((sel) => (sel.onchange = () => {
     const p = find(sel); save(p, "B", sel.value, () => (p.cliente = sel.value));
+  }));
+  box.querySelectorAll(".paso .paso-del").forEach((b) => (b.onclick = () => {
+    const p = find(b);
+    if (confirm(`¿Borrar "${p.text}"?`)) save(p, "D", BORRADO, () => (p.estado = BORRADO));
   }));
   box.querySelectorAll(".paso .chip").forEach((b) => (b.onclick = () => {
     const p = find(b), s = b.dataset.socia;
@@ -877,14 +903,12 @@ async function pageInicio(el) {
     ${state.lastCreated ? `<div class="banner">Se creó la planilla de <b>${esc(state.lastCreated.name)}</b> en tu "Mi unidad" de Drive.
       Movela a la carpeta del cliente para que las demás socias también la vean.
       <a href="${sheetUrl(state.lastCreated.id)}" target="_blank" rel="noopener">Abrir planilla</a></div>` : ""}
-    <div class="home-grid">
-      <div>${monthCard()}</div>
-      <div class="pasos-col" id="pasos"><div class="card muted">Cargando próximos pasos…</div></div>
-    </div>
+    ${monthCard()}
+    <div id="pasos"><div class="card muted">Cargando próximos pasos…</div></div>
     <div class="grid">
       ${state.clients.map((c, i) => clientCard(c, books[i])).join("")}
     </div>`;
-  $("#reload").onclick = async () => { state.cache = {}; state.meetings = null; state.pasos = null; await loadIndex(); renderPage(); };
+  $("#reload").onclick = async () => { forgetTabs(); state.cache = {}; state.meetings = null; state.pasos = null; await loadIndex(); renderPage(); };
   loadPasos().then(() => renderPasos($("#pasos")))
     .catch((e) => { if ($("#pasos")) $("#pasos").innerHTML = `<div class="card"><h2>Próximos pasos</h2><p class="error small">${esc(e.message)}</p></div>`; });
   el.querySelectorAll("[data-open]").forEach((b) => (b.onclick = () => { state.current = b.dataset.client; store("adm_client", state.current); go(b.dataset.open); }));
@@ -1018,10 +1042,9 @@ const syncRange = (tab) => tabRange(tab, tab === TABS.checklist ? "A1:AI300" : "
 
 async function readTemplate() {
   const id = templateId(), out = {};
-  for (const tab of (await api().tabs(id)).filter((t) => !t.startsWith(BACKUP))) {
-    const [values, formulas] = await Promise.all([api().get(id, syncRange(tab)), api().get(id, syncRange(tab), true)]);
-    out[tab] = { values, formulas };
-  }
+  const tabs = (await api().tabs(id)).filter((t) => !t.startsWith(BACKUP));
+  const [values, formulas] = await Promise.all([api().getMany(id, tabs.map(syncRange)), api().getMany(id, tabs.map(syncRange), true)]);
+  tabs.forEach((tab, i) => (out[tab] = { values: values[i], formulas: formulas[i] }));
   return out;
 }
 
@@ -1073,9 +1096,11 @@ function diffTab(tab, oldRows, tpl, plan) {
 async function planSync(client, tpl) {
   const have = await api().tabs(client.sheetId);
   const plan = { client, writes: [], added: [], removed: [] };
-  for (const [tab, t] of Object.entries(tpl)) {
+  const both = Object.keys(tpl).filter((tab) => have.includes(tab));
+  const old = await api().getMany(client.sheetId, both.map(syncRange));
+  for (const tab of Object.keys(tpl)) {
     if (!have.includes(tab)) { plan.added.push({ tab, label: "pestaña nueva" }); continue; }
-    diffTab(tab, await api().get(client.sheetId, syncRange(tab)), t, plan);
+    diffTab(tab, old[both.indexOf(tab)], tpl[tab], plan);
   }
   return plan;
 }
