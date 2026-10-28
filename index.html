@@ -1394,12 +1394,12 @@ async function pageReuniones(el) {
       <div class="card meet-pick">
         <h2 style="margin:0 0 4px">Todas las reuniones (${meetings.length})</h2>
         <p class="muted small" style="margin:0 0 10px">Tocá una para ver su minuta. La más reciente, arriba.</p>
-        <div id="mlist"></div>
-        <input type="search" id="msearch" placeholder="Filtrar (opcional)…" value="${esc(state.meetingQuery || "")}" style="margin-top:12px">
+        <input type="search" id="msearch" placeholder="Filtrar (opcional)…" value="${esc(state.meetingQuery || "")}">
         <select id="mfilter" style="margin-top:8px">
           <option value="">Todas</option>
           ${["Interna", ...state.clients.map((c) => c.name)].map((n) => `<option ${n === filter ? "selected" : ""}>${esc(n)}</option>`).join("")}
         </select>
+        <div id="mlist" style="margin-top:12px"></div>
       </div>
       <div id="mdetail"></div>
     </div>` : `<div class="card muted">Todavía no hay reuniones cargadas.</div>`}`;
