@@ -164,9 +164,13 @@
   .meet-topic { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .meeting { border-left: 4px solid var(--primary); }
   .meeting h3 { margin: 0; font-size: 16px; }
-  .meeting .kv { margin-top: 10px; font-size: 14px; }
-  .meeting .kv b { display: block; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-top: 8px; }
-  .meeting .kv p { margin: 2px 0 0; white-space: pre-wrap; }
+  .mblock { margin-top: 16px; --mc: var(--primary); --ms: var(--primary-soft); }
+  .mblock.mb-dec { --mc: var(--ok); --ms: var(--ok-soft); }
+  .mblock.mb-pend { --mc: #C0661F; --ms: #FCE6D4; }
+  .mblock-title { display: inline-block; font-size: 13px; font-weight: 700; color: var(--mc); background: var(--ms); padding: 3px 10px; border-radius: 99px; }
+  .mblock ul { margin: 8px 0 0; padding-left: 20px; font-size: 14px; line-height: 1.45; }
+  .mblock li { margin: 4px 0; }
+  .mblock li::marker { color: var(--mc); }
   .form-grid { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
   .form-grid .full { grid-column: 1 / -1; }
   .form-grid label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 3px; }
@@ -1377,6 +1381,16 @@ function bindFormInputs(el, book) {
 
 /* ---------- Reuniones ---------- */
 
+// Un bloque de la minuta: cada oración o renglón va en su propia línea, y si empieza con "Algo:" eso va en negrita.
+function meetBlock(title, cls, text) {
+  const items = String(text || "").split(/\n+|(?<=\.)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/).map((x) => x.trim()).filter(Boolean);
+  if (!items.length) return "";
+  return `<div class="mblock ${cls}"><div class="mblock-title">${esc(title)}</div><ul>${items.map((it) => {
+    const m = it.match(/^([^:]{2,40}):\s+(.+)$/);
+    return `<li>${m ? `<b>${esc(m[1])}:</b> ${esc(m[2])}` : esc(it)}</li>`;
+  }).join("")}</ul></div>`;
+}
+
 async function pageReuniones(el) {
   const meetings = await loadMeetings();
   const filter = state.meetingFilter || "";
@@ -1427,12 +1441,10 @@ async function pageReuniones(el) {
   const showDetail = (m) => {
     $("#mdetail").innerHTML = !m ? "" : `<div class="card meeting">
       <div class="row"><h3>${esc(m.cliente || "Interna")}</h3>${m.tipo ? `<span class="tag">${esc(m.tipo)}</span>` : ""}<span class="spacer"></span><span class="muted small">${esc(m.fecha)}</span></div>
-      <div class="kv">
-        ${m.participantes ? `<b>Participantes</b><p>${esc(m.participantes)}</p>` : ""}
-        ${m.temas ? `<b>Temas</b><p>${esc(m.temas)}</p>` : ""}
-        ${m.decisiones ? `<b>Decisiones</b><p>${esc(m.decisiones)}</p>` : ""}
-        ${m.pendientes ? `<b>Pendientes que se acordaron</b><p>${esc(m.pendientes)}</p>` : ""}
-      </div>
+      ${m.participantes ? `<p class="small muted" style="margin:6px 0 0">Participaron: ${esc(m.participantes)}</p>` : ""}
+      ${meetBlock("Temas", "mb-temas", m.temas)}
+      ${meetBlock("Decisiones", "mb-dec", m.decisiones)}
+      ${meetBlock("Pendientes que se acordaron", "mb-pend", m.pendientes)}
       ${/^https?:\/\//.test(m.minuta) ? `<p style="margin:10px 0 0"><a href="${esc(m.minuta)}" target="_blank" rel="noopener">Abrir minuta completa</a></p>` : ""}
       ${m.cargo ? `<p class="small muted" style="margin:8px 0 0">Cargó ${esc(m.cargo)}</p>` : ""}
     </div>`;
