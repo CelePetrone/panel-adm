@@ -72,7 +72,7 @@
   .btn.small { padding: 5px 10px; font-size: 13px; }
   .btn:disabled { opacity: .5; cursor: default; }
 
-  select, input[type=text], input[type=date], textarea {
+  select, input[type=text], input[type=search], input[type=date], textarea {
     border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 8px 10px; width: 100%;
   }
   textarea { resize: vertical; min-height: 38px; }
@@ -155,6 +155,13 @@
   table.reg td textarea { min-height: 34px; }
 
   /* Reuniones */
+  .meet-grid { display: grid; grid-template-columns: minmax(240px, 1fr) 2fr; gap: 16px; align-items: start; }
+  #mlist { margin-top: 10px; max-height: 60vh; overflow-y: auto; }
+  .meet-item { display: block; width: 100%; text-align: left; background: none; border: 0; border-top: 1px solid var(--line); padding: 9px 8px; cursor: pointer; font: inherit; font-size: 14px; color: var(--ink); border-radius: 0; }
+  .meet-item:hover { background: var(--bg); }
+  .meet-item.on { background: var(--primary-soft); border-radius: 8px; border-top-color: transparent; }
+  .meet-date { font-weight: 700; }
+  .meet-topic { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .meeting { border-left: 4px solid var(--primary); }
   .meeting h3 { margin: 0; font-size: 16px; }
   .meeting .kv { margin-top: 10px; font-size: 14px; }
@@ -197,6 +204,8 @@
     .paso-main { padding-right: 26px; }
     .paso-del { position: absolute; top: 8px; right: 0; }
     .form-grid { grid-template-columns: 1fr; }
+    .meet-grid { grid-template-columns: 1fr; }
+    #mlist { max-height: 40vh; }
     .stage-head .bar { width: 70px; }
     table.reg tr > th:first-child { width: 120px; min-width: 120px; }
     table.reg td { min-width: 130px; }
@@ -1371,39 +1380,64 @@ function bindFormInputs(el, book) {
 async function pageReuniones(el) {
   const meetings = await loadMeetings();
   const filter = state.meetingFilter || "";
-  const list = meetings.filter((m) => !filter || m.cliente === filter).slice().reverse();
-  const pendientes = list.filter((m) => m.pendientes);
   el.innerHTML = `
     ${demoBanner()}
     <div class="topbar">
-      <div><h1>Reuniones</h1><p class="sub">Minutas y pendientes de cada reunión, con clientes o entre nosotras.</p></div>
+      <div><h1>Reuniones</h1><p class="sub">Minutas de cada reunión, con clientes o entre nosotras. Los pendientes pasan solos a Próximos pasos, en Inicio.</p></div>
       <div class="row">
-        <select id="mfilter" style="width:auto">
-          <option value="">Todas</option>
-          ${["Interna", ...state.clients.map((c) => c.name)].map((n) => `<option ${n === filter ? "selected" : ""}>${esc(n)}</option>`).join("")}
-        </select>
         ${state.mode === "google" && CFG.reunionesId ? `<a class="btn ghost small" href="${sheetUrl(CFG.reunionesId)}" target="_blank" rel="noopener">Abrir planilla</a>` : ""}
         <button class="btn" id="new-meeting">+ Nueva reunión</button>
       </div>
     </div>
     <div id="meeting-form"></div>
-    ${pendientes.length ? `<div class="card" style="border-left:4px solid var(--accent)">
-      <h2>Pendientes</h2>
-      ${pendientes.map((m) => `<div class="small" style="padding:6px 0;border-top:1px solid var(--line)"><b>${esc(m.cliente || "Interna")}</b> <span class="muted">· ${esc(m.fecha)}</span><div style="white-space:pre-wrap">${esc(m.pendientes)}</div></div>`).join("")}
-    </div>` : ""}
-    ${list.length ? list.map((m) => `<div class="card meeting">
+    ${meetings.length ? `<div class="meet-grid">
+      <div class="card meet-pick">
+        <input type="search" id="msearch" placeholder="Buscar por fecha, tema o cliente…" value="${esc(state.meetingQuery || "")}">
+        <select id="mfilter" style="margin-top:8px">
+          <option value="">Todas</option>
+          ${["Interna", ...state.clients.map((c) => c.name)].map((n) => `<option ${n === filter ? "selected" : ""}>${esc(n)}</option>`).join("")}
+        </select>
+        <div id="mlist"></div>
+      </div>
+      <div id="mdetail"></div>
+    </div>` : `<div class="card muted">Todavía no hay reuniones cargadas.</div>`}`;
+  $("#new-meeting").onclick = showMeetingForm;
+  if (!meetings.length) return;
+
+  const matches = () => {
+    const q = norm(state.meetingQuery || "");
+    return meetings.filter((m) => (!state.meetingFilter || m.cliente === state.meetingFilter) &&
+      (!q || norm([m.fecha, m.cliente, m.tipo, m.participantes, m.temas, m.decisiones].join(" ")).includes(q))).slice().reverse();
+  };
+  const showList = () => {
+    const list = matches();
+    if (!list.some((m) => m.row === state.meetingSel)) state.meetingSel = list[0]?.row;
+    $("#mlist").innerHTML = list.length ? list.map((m) => `<button type="button" class="meet-item ${m.row === state.meetingSel ? "on" : ""}" data-row="${m.row}">
+        <span class="meet-date">${esc(m.fecha)}</span> <span class="tag ${m.cliente === "Interna" || !m.cliente ? "" : "accent"}">${esc(m.cliente || "Interna")}</span>
+        <span class="meet-topic">${esc(m.temas)}</span>
+      </button>`).join("") : `<p class="muted small">No hay reuniones con esa búsqueda.</p>`;
+    $("#mlist").querySelectorAll(".meet-item").forEach((b) => (b.onclick = () => {
+      state.meetingSel = +b.dataset.row; showList();
+      if (window.innerWidth <= 760) $("#mdetail").scrollIntoView({ behavior: "smooth" });
+    }));
+    showDetail(meetings.find((m) => m.row === state.meetingSel));
+  };
+  const showDetail = (m) => {
+    $("#mdetail").innerHTML = !m ? "" : `<div class="card meeting">
       <div class="row"><h3>${esc(m.cliente || "Interna")}</h3>${m.tipo ? `<span class="tag">${esc(m.tipo)}</span>` : ""}<span class="spacer"></span><span class="muted small">${esc(m.fecha)}</span></div>
       <div class="kv">
         ${m.participantes ? `<b>Participantes</b><p>${esc(m.participantes)}</p>` : ""}
         ${m.temas ? `<b>Temas</b><p>${esc(m.temas)}</p>` : ""}
         ${m.decisiones ? `<b>Decisiones</b><p>${esc(m.decisiones)}</p>` : ""}
-        ${m.pendientes ? `<b>Pendientes</b><p>${esc(m.pendientes)}</p>` : ""}
+        ${m.pendientes ? `<b>Pendientes que se acordaron</b><p>${esc(m.pendientes)}</p>` : ""}
       </div>
       ${/^https?:\/\//.test(m.minuta) ? `<p style="margin:10px 0 0"><a href="${esc(m.minuta)}" target="_blank" rel="noopener">Abrir minuta completa</a></p>` : ""}
       ${m.cargo ? `<p class="small muted" style="margin:8px 0 0">Cargó ${esc(m.cargo)}</p>` : ""}
-    </div>`).join("") : `<div class="card muted">Todavía no hay reuniones cargadas.</div>`}`;
-  $("#mfilter").onchange = (e) => { state.meetingFilter = e.target.value; renderPage(); };
-  $("#new-meeting").onclick = showMeetingForm;
+    </div>`;
+  };
+  $("#msearch").oninput = (e) => { state.meetingQuery = e.target.value; showList(); };
+  $("#mfilter").onchange = (e) => { state.meetingFilter = e.target.value; showList(); };
+  showList();
 }
 
 function showMeetingForm() {
