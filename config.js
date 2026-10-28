@@ -9,6 +9,9 @@ window.PANEL_CONFIG = {
   // Planilla índice "Clientes ADM" (la parte del link entre /d/ y /edit).
   indiceId: "1isJ_UxUy0uZaSjK9FyYWM8jmMuaU1H2sx9LRJXkGuZ8",
 
+  // Planilla modelo que se copia para cada cliente nuevo (en "_Modelo de carpeta cliente").
+  plantillaId: "1hFXwtN50tdfmaLiZLdbuHorBIQ0z584dDQ1yVLLiNz0",
+
   // Socias, para elegir responsable en el checklist.
   socias: ["Celeste", "Caro", "Fer"],
 };

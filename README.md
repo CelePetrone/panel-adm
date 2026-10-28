@@ -14,7 +14,9 @@ Es una sola página web publicada con GitHub Pages. Los datos no se guardan acá
 | Ficha | Pestaña **Ficha del cliente** de la planilla del cliente. |
 | Reuniones | Pestaña **Reuniones** del índice Clientes ADM. Si no existe, se crea sola cuando se carga la primera reunión. |
 
-Para sumar un cliente nuevo: hacer una copia de la planilla modelo, agregar la fila en Clientes ADM y vincular el link desde Inicio.
+Para sumar un cliente nuevo: en Inicio, **+ Nuevo cliente**. El panel crea su planilla copiando el modelo **MODELO - Check list + relevamiento + ficha (no editar)**, que está en la carpeta "_Modelo de carpeta cliente". También agrega la fila en Clientes ADM. La planilla nueva queda en "Mi unidad" de quien la creó: hay que moverla a la carpeta del cliente para que la vean las demás socias.
+
+Si se cambia el modelo (por ejemplo, una tarea nueva en el checklist), los clientes nuevos salen con el cambio. Los que ya existen no se tocan.
 
 ## Probarlo sin conectar nada
 

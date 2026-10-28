@@ -304,6 +304,28 @@ const googleApi = {
   async me() {
     try { return await gfetch("https://www.googleapis.com/oauth2/v3/userinfo"); } catch (e) { return null; }
   },
+  // Crea una planilla nueva con las mismas pestañas que el modelo y devuelve su ID.
+  async createFromTemplate(templateId, title) {
+    const created = await gfetch(SHEETS, { method: "POST", body: JSON.stringify({ properties: { title } }) });
+    const id = created.spreadsheetId, blankSheet = created.sheets[0].properties.sheetId;
+    const tpl = await gfetch(SHEETS + templateId + "?fields=sheets.properties(sheetId,title,index)");
+    const tabs = tpl.sheets.map((x) => x.properties).sort((a, b) => a.index - b.index);
+    // Primero las pestañas de datos y al final las que tienen fórmulas que las usan (Resumen).
+    const ordered = [...tabs.filter((t) => t.title !== "Resumen"), ...tabs.filter((t) => t.title === "Resumen")];
+    let first = true;
+    for (const t of ordered) {
+      const copy = await gfetch(SHEETS + templateId + "/sheets/" + t.sheetId + ":copyTo",
+        { method: "POST", body: JSON.stringify({ destinationSpreadsheetId: id }) });
+      t.newId = copy.sheetId;
+      const requests = [{ updateSheetProperties: { properties: { sheetId: copy.sheetId, title: t.title }, fields: "title" } }];
+      if (first) { requests.push({ deleteSheet: { sheetId: blankSheet } }); first = false; }
+      await gfetch(SHEETS + id + ":batchUpdate", { method: "POST", body: JSON.stringify({ requests }) });
+    }
+    // Mismo orden de pestañas que el modelo.
+    await gfetch(SHEETS + id + ":batchUpdate", { method: "POST", body: JSON.stringify({
+      requests: tabs.map((t, i) => ({ updateSheetProperties: { properties: { sheetId: t.newId, index: i }, fields: "index" } })) }) });
+    return id;
+  },
 };
 
 // Versión de ejemplo: misma interfaz, pero todo queda en memoria.
@@ -335,6 +357,11 @@ const demoApi = {
   async append(id, range, values) { const p = parseA1(range); demoBook(id)[p.tab].push(...values); },
   async addTab(id, title) { demoBook(id)[title] = []; },
   async me() { return { given_name: "Demo" }; },
+  async createFromTemplate(templateId, title) {
+    const id = "DEMO_" + Date.now();
+    demoDb[id] = JSON.parse(JSON.stringify(window.DEMO_DATA.DEMO_B));
+    return id;
+  },
 };
 
 const api = () => (state.mode === "demo" ? demoApi : googleApi);
@@ -603,7 +630,7 @@ function checklistStats(chk) {
   return out;
 }
 function formStats(sections) {
-  const items = (sections || []).flatMap((s) => s.items.filter((x) => x.row));
+  const items = (sections || []).flatMap((s) => s.items.filter((x) => x.row && !/^cliente:?$/i.test(x.label)));
   return { total: items.length, done: items.filter((x) => x.value).length };
 }
 const barHtml = (done, total) => `<div class="bar"><span style="width:${total ? Math.round((done / total) * 100) : 0}%"></span></div>`;
@@ -616,8 +643,13 @@ async function pageInicio(el) {
       <div class="row">
         ${state.mode === "google" ? `<a class="btn ghost small" href="${sheetUrl(CFG.indiceId)}" target="_blank" rel="noopener">Abrir planilla índice</a>` : ""}
         <button class="btn ghost small" id="reload">Actualizar</button>
+        <button class="btn small" id="new-client">+ Nuevo cliente</button>
       </div>
     </div>
+    <div id="client-form"></div>
+    ${state.lastCreated ? `<div class="banner">Se creó la planilla de <b>${esc(state.lastCreated.name)}</b> en tu "Mi unidad" de Drive.
+      Movela a la carpeta del cliente para que las demás socias también la vean.
+      <a href="${sheetUrl(state.lastCreated.id)}" target="_blank" rel="noopener">Abrir planilla</a></div>` : ""}
     ${monthCard()}
     <div class="grid">
       ${state.clients.map((c, i) => clientCard(c, books[i])).join("")}
@@ -625,14 +657,20 @@ async function pageInicio(el) {
   $("#reload").onclick = async () => { state.cache = {}; await loadIndex(); renderPage(); };
   el.querySelectorAll("[data-open]").forEach((b) => (b.onclick = () => { state.current = b.dataset.client; store("adm_client", state.current); go(b.dataset.open); }));
   el.querySelectorAll("[data-link]").forEach((f) => (f.onsubmit = (ev) => { ev.preventDefault(); linkSheet(f.dataset.link, f.querySelector("input").value); }));
+  el.querySelectorAll("[data-create]").forEach((b) => (b.onclick = () => createSheetFor(b.dataset.create, b)));
+  $("#new-client").onclick = showClientForm;
 }
 
 function clientCard(c, book) {
   const estadoClass = /piloto|activo/i.test(c.estado) ? "ok" : "accent";
   let body = "";
   if (!c.sheetId) {
-    body = `<form data-link="${esc(c.name)}" style="margin-top:10px">
-      <p class="small muted" style="margin:0 0 6px">Pegá el link de su planilla de checklist, relevamiento y ficha:</p>
+    body = `${CFG.plantillaId ? `<div style="margin-top:10px">
+        <p class="small muted" style="margin:0 0 6px">Todavía no tiene planilla.</p>
+        <button class="btn small" data-create="${esc(c.name)}">Crear su planilla desde el modelo</button>
+      </div>` : ""}
+      <form data-link="${esc(c.name)}" style="margin-top:10px">
+      <p class="small muted" style="margin:0 0 6px">${CFG.plantillaId ? "O, si ya tiene una, pegá el link:" : "Pegá el link de su planilla de checklist, relevamiento y ficha:"}</p>
       <div class="row"><input type="text" placeholder="https://docs.google.com/spreadsheets/d/…" style="flex:1;min-width:0"><button class="btn small">Vincular</button></div>
     </form>`;
   } else if (!book || book.error) {
@@ -660,6 +698,70 @@ function clientCard(c, book) {
     ${c.carpeta ? `<a class="small" href="${esc(c.carpeta)}" target="_blank" rel="noopener">Abrir carpeta en Drive</a>` : ""}
     ${body}
   </div>`;
+}
+
+function showClientForm() {
+  const box = $("#client-form");
+  box.innerHTML = `<form class="card" id="cform">
+    <h2>Nuevo cliente</h2>
+    <p class="small muted" style="margin-top:-6px">Se crea su planilla de checklist, relevamiento y ficha a partir del modelo, y queda agregado a Clientes ADM.</p>
+    <div class="form-grid">
+      <div class="full"><label>Nombre del cliente</label><input type="text" name="nombre" required></div>
+      <div><label>Estado</label><select name="estado"><option>Relevando</option><option>Piloto</option><option>Activo</option></select></div>
+      <div><label>Responsable</label><select name="resp"><option value="">—</option>${(CFG.socias || []).map((s) => `<option>${esc(s)}</option>`).join("")}</select></div>
+    </div>
+    <div class="row" style="margin-top:12px"><button class="btn">Crear cliente</button><button type="button" class="btn ghost" id="ccancel">Cancelar</button><span class="small muted" id="cstatus"></span></div>
+  </form>`;
+  $("#ccancel").onclick = () => (box.innerHTML = "");
+  $("#cform").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const f = new FormData(ev.target), name = txt(f.get("nombre")), btn = ev.target.querySelector("button");
+    if (!name) return;
+    if (state.clients.some((c) => c.name.toLowerCase() === name.toLowerCase())) { toast("Ya hay un cliente con ese nombre"); return; }
+    btn.disabled = true; $("#cstatus").textContent = "Creando la planilla… (tarda unos segundos)";
+    try {
+      const id = await newClientSheet(name);
+      const h = await ensurePlanillaHeader();
+      const row = new Array(h.length).fill("");
+      const put = (col, v) => { if (col >= 0) row[col] = v; };
+      put(state.indexCols.cliente, name); put(state.indexCols.estado, f.get("estado"));
+      put(state.indexCols.resp, f.get("resp")); put(state.indexCols.planilla, sheetUrl(id));
+      await api().append(CFG.indiceId_active, tabRange(state.indexTab, "A1"), [row]);
+      await loadIndex();
+      state.current = name;
+      if (state.mode === "google") state.lastCreated = { name, id };
+      toast("Cliente creado");
+      renderPage();
+    } catch (e) { btn.disabled = false; $("#cstatus").textContent = ""; toast("No se pudo crear: " + e.message); }
+  };
+  box.scrollIntoView({ behavior: "smooth" });
+}
+
+async function newClientSheet(name) {
+  const id = await api().createFromTemplate(CFG.plantillaId, `${name} - Check list + relevamiento + ficha`);
+  // Nombre del cliente en los encabezados y fechas en blanco.
+  for (const tab of [TABS.checklist, TABS.relev]) {
+    try { await api().set(id, tabRange(tab, "B2:B3"), [[name], [""]]); } catch (e) {}
+  }
+  return id;
+}
+
+async function ensurePlanillaHeader() {
+  if (state.indexCols.planilla < 0) {
+    const col = state.indexHeaders.length;
+    await api().set(CFG.indiceId_active, tabRange(state.indexTab, colLetter(col) + "1"), [["Planilla"]]);
+    await loadIndex();
+  }
+  return state.indexHeaders;
+}
+
+async function createSheetFor(name, btn) {
+  btn.disabled = true; btn.textContent = "Creando… (unos segundos)";
+  try {
+    const id = await newClientSheet(name);
+    if (state.mode === "google") state.lastCreated = { name, id };
+    await linkSheet(name, sheetUrl(id));
+  } catch (e) { btn.disabled = false; btn.textContent = "Crear su planilla desde el modelo"; toast("No se pudo crear: " + e.message); }
 }
 
 async function linkSheet(name, link) {
