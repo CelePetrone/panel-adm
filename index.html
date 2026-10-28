@@ -448,11 +448,21 @@ function parseForm(rows, kind) {
   return sections;
 }
 
+// Dónde viven las reuniones: la planilla "Reuniones ADM" si está configurada, si no una pestaña del índice.
+async function meetingsPlace() {
+  if (state.mode === "google" && CFG.reunionesId) {
+    const tabs = await api().tabs(CFG.reunionesId);
+    return { id: CFG.reunionesId, tab: tabs[0], exists: true };
+  }
+  const tabs = await api().tabs(CFG.indiceId_active);
+  return { id: CFG.indiceId_active, tab: "Reuniones", exists: tabs.includes("Reuniones") };
+}
+
 async function loadMeetings(force) {
   if (state.meetings && !force) return state.meetings;
-  const tabs = await api().tabs(CFG.indiceId_active);
-  if (!tabs.includes("Reuniones")) { state.meetings = []; return state.meetings; }
-  const rows = await api().get(CFG.indiceId_active, tabRange("Reuniones", "A1:I1000"));
+  const place = await meetingsPlace();
+  if (!place.exists) { state.meetings = []; return state.meetings; }
+  const rows = await api().get(place.id, tabRange(place.tab, "A1:I1000"));
   state.meetings = rows.slice(1).map((r, i) => ({
     row: i + 2, fecha: txt(r[0]), cliente: txt(r[1]), tipo: txt(r[2]), participantes: txt(r[3]),
     temas: txt(r[4]), decisiones: txt(r[5]), pendientes: txt(r[6]), minuta: txt(r[7]), cargo: txt(r[8]),
@@ -942,6 +952,7 @@ async function pageReuniones(el) {
           <option value="">Todas</option>
           ${["Interna", ...state.clients.map((c) => c.name)].map((n) => `<option ${n === filter ? "selected" : ""}>${esc(n)}</option>`).join("")}
         </select>
+        ${state.mode === "google" && CFG.reunionesId ? `<a class="btn ghost small" href="${sheetUrl(CFG.reunionesId)}" target="_blank" rel="noopener">Abrir planilla</a>` : ""}
         <button class="btn" id="new-meeting">+ Nueva reunión</button>
       </div>
     </div>
@@ -991,13 +1002,13 @@ function showMeetingForm() {
     const row = [`${+d}/${+m}/${y}`, f.get("cliente"), f.get("tipo"), f.get("participantes"), f.get("temas"),
       f.get("decisiones"), f.get("pendientes"), f.get("minuta"), state.user?.given_name || ""];
     try {
-      const tabs = await api().tabs(CFG.indiceId_active);
-      if (!tabs.includes("Reuniones")) {
-        await api().addTab(CFG.indiceId_active, "Reuniones");
-        await api().set(CFG.indiceId_active, tabRange("Reuniones", "A1:I1"),
+      const place = await meetingsPlace();
+      if (!place.exists) {
+        await api().addTab(place.id, place.tab);
+        await api().set(place.id, tabRange(place.tab, "A1:I1"),
           [["Fecha", "Cliente", "Tipo", "Participantes", "Temas", "Decisiones", "Pendientes", "Minuta", "Cargó"]]);
       }
-      await api().append(CFG.indiceId_active, tabRange("Reuniones", "A1:I1"), [row]);
+      await api().append(place.id, tabRange(place.tab, "A1:I1"), [row]);
       await loadMeetings(true);
       toast("Reunión guardada");
       renderPage();
