@@ -704,6 +704,7 @@ async function renderPage(quiet) {
   try {
     const fn = { inicio: pageInicio, ficha: pageFicha, relev: pageRelev, checklist: pageChecklist, reuniones: pageReuniones }[state.page];
     await fn(el);
+    addF5(el);
     if (quiet) window.scrollTo(0, y);
   } catch (e) {
     el.innerHTML = `<div class="error">Algo falló: ${esc(e.message)}</div><button class="btn ghost" id="retry">Reintentar</button>`;
@@ -726,6 +727,22 @@ async function refresh(quiet) {
     lastRefresh = Date.now();
     await renderPage(quiet);
   } finally { refreshing = false; }
+}
+
+// Botón F5 arriba a la derecha en todas las pestañas.
+function addF5(el) {
+  const bar = el.querySelector(".topbar");
+  if (!bar) return;
+  let btn = bar.querySelector("#reload");
+  if (!btn) {
+    let row = bar.querySelector(":scope > .row");
+    if (!row) { row = document.createElement("div"); row.className = "row"; bar.appendChild(row); }
+    btn = document.createElement("button");
+    btn.className = "btn ghost small"; btn.id = "reload"; btn.textContent = "F5";
+    row.prepend(btn);
+  }
+  btn.title = "Volver a leer las planillas (el panel también lo hace solo cada 2 minutos)";
+  btn.onclick = () => refresh();
 }
 
 // No refresca si alguien está escribiendo o tiene un formulario abierto, para no borrarle nada.
