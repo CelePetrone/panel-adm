@@ -143,6 +143,14 @@
   .field { display: grid; grid-template-columns: minmax(180px, 38%) 1fr; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); align-items: start; }
   .field:first-of-type { border-top: 0; }
   .field .lbl { font-size: 14px; padding-top: 8px; }
+  .field .lbl b { font-weight: 600; }
+  .field .lbl .hint { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .field.empty .lbl .hint { padding-left: 12px; }
+  .form-card { border-left: 4px solid var(--sc); --sc: var(--primary); --ss: var(--primary-soft); }
+  .form-card.sc-green { --sc: var(--ok); --ss: var(--ok-soft); }
+  .form-card.sc-orange { --sc: #C0661F; --ss: #FCE6D4; }
+  .form-card.sc-violet { --sc: #6B4FA0; --ss: #EEE8F7; }
+  .sec-title { display: inline-block; font-size: 15px; font-weight: 700; color: var(--sc); background: var(--ss); padding: 4px 12px; border-radius: 99px; }
   .field.empty .lbl::before { content: "•"; color: var(--accent); margin-right: 6px; }
   .note { font-size: 13px; color: var(--muted); padding: 4px 0; }
   .saved { color: var(--ok); font-size: 12px; }
@@ -1334,12 +1342,23 @@ async function pageRelev(el) {
   bindFormInputs(el, book);
 }
 
+// "Contacto principal (nombre, cargo, mail):" → título en negrita y lo de entre paréntesis abajo, más chico.
+function labelHtml(label) {
+  const t = label.replace(/:\s*$/, "").trim(), m = t.match(/^(.+?)\s*\((.+)\)\s*:?$/);
+  return m ? `<b>${esc(m[1])}</b><span class="hint">${esc(m[2])}</span>` : `<b>${esc(t)}</b>`;
+}
+
+const SECTION_COLORS = ["sc-blue", "sc-green", "sc-orange", "sc-violet"];
+
 function formSections(sections, tab) {
-  return sections.map((s) => `<div class="card">
-    ${s.title ? `<h2>${esc(s.title)}</h2>` : ""}
+  return sections.map((s, i) => {
+    const fields = s.items.filter((it) => it.row && !/^cliente:?$/i.test(it.label));
+    const done = fields.filter((it) => it.value).length;
+    return `<div class="card form-card ${SECTION_COLORS[i % SECTION_COLORS.length]}">
+    ${s.title ? `<div class="row" style="margin-bottom:6px"><span class="sec-title">${esc(s.title)}</span><span class="spacer"></span>${fields.length ? `<span class="small muted">${done} de ${fields.length}</span>` : ""}</div>` : ""}
     ${s.items.map((it) => it.note ? `<div class="note">${esc(it.note)}</div>` :
       `<div class="field ${it.value ? "" : "empty"}">
-        <div class="lbl">${esc(it.label.replace(/:\s*$/, ""))}</div>
+        <div class="lbl">${labelHtml(it.label)}</div>
         <div><textarea rows="1" data-tab="${esc(tab || TABS.ficha)}" data-cell="B${it.row}">${esc(it.value)}</textarea></div>
       </div>`).join("")}
     ${s.table ? `<div class="reg-wrap"><table class="reg">
@@ -1347,7 +1366,8 @@ function formSections(sections, tab) {
       ${s.rows.map((r) => `<tr><th>${esc(r.label.replace(/:\s*$/, ""))}</th>${r.cells.map((c) =>
         `<td><textarea rows="1" data-tab="${esc(tab || TABS.ficha)}" data-cell="${colLetter(c.col)}${r.row}" ${c.head ? `data-head="${esc(c.head)}"` : ""}>${esc(c.value)}</textarea></td>`).join("")}</tr>`).join("")}
     </table></div>` : ""}
-  </div>`).join("");
+  </div>`;
+  }).join("");
 }
 
 function autosize(t) { t.style.height = "auto"; t.style.height = t.scrollHeight + 2 + "px"; }
