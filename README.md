@@ -12,6 +12,7 @@ Es una sola página web publicada con GitHub Pages. Los datos no se guardan acá
 | Checklist | Pestaña **Checklist** de la planilla del cliente. Tildar en el panel es lo mismo que tildar en la planilla. |
 | Relevamiento | Pestañas **Relevamiento** y **Evaluación interna** de la planilla del cliente. |
 | Ficha | Pestaña **Ficha del cliente** de la planilla del cliente. |
+| Inicio: próximos pasos | Pestaña **Próximos pasos** de la planilla Reuniones ADM (el panel la crea sola). Los pendientes de cada minuta entran solos ("Cele: …", "Caro y Fer: …", "Todas: …" quedan con esas responsables). También se pueden agregar pasos a mano. |
 | Reuniones | Planilla **Reuniones ADM**, en la carpeta "2. ADM interno": una fila por reunión, con el link a la minuta completa. |
 
 Para sumar un cliente nuevo: en Inicio, **+ Nuevo cliente**. El panel crea su planilla copiando el modelo **MODELO - Check list + relevamiento + ficha (no editar)**, que está en la carpeta "_Modelo de carpeta cliente". También agrega la fila en Clientes ADM. La planilla nueva queda en "Mi unidad" de quien la creó: hay que moverla a la carpeta del cliente para que la vean las demás socias.
