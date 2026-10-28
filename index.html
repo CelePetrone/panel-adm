@@ -146,8 +146,11 @@
   .field.empty .lbl::before { content: "•"; color: var(--accent); margin-right: 6px; }
   .note { font-size: 13px; color: var(--muted); padding: 4px 0; }
   .saved { color: var(--ok); font-size: 12px; }
-  table.reg { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .reg-wrap { overflow-x: auto; margin: 0 -18px; padding: 0 18px; }
+  table.reg { border-collapse: separate; border-spacing: 0; font-size: 14px; }
   table.reg th, table.reg td { border-top: 1px solid var(--line); padding: 6px; text-align: left; vertical-align: top; }
+  table.reg td { min-width: 150px; }
+  table.reg tr > th:first-child { position: sticky; left: -18px; z-index: 1; background: var(--card); width: 220px; min-width: 220px; padding-left: 18px; box-shadow: 6px 0 6px -6px rgba(0,0,0,.15); }
   table.reg th { color: var(--muted); font-weight: 600; }
   table.reg td textarea { min-height: 34px; }
 
@@ -195,6 +198,8 @@
     .paso-del { position: absolute; top: 8px; right: 0; }
     .form-grid { grid-template-columns: 1fr; }
     .stage-head .bar { width: 70px; }
+    table.reg tr > th:first-child { width: 120px; min-width: 120px; }
+    table.reg td { min-width: 130px; }
     select.client-select { width: 100%; }
   }
 </style>
@@ -497,7 +502,7 @@ async function loadClientBook(client, force) {
   if (state.cache[client.sheetId] && !force) return state.cache[client.sheetId];
   const id = client.sheetId;
   const tabs = await api().tabs(id);
-  const want = [[TABS.checklist, "A1:D120"], [TABS.relev, "A1:B120"], [TABS.eval, "A1:B60"], [TABS.ficha, "A1:F120"]];
+  const want = [[TABS.checklist, "A1:D120"], [TABS.relev, "A1:B120"], [TABS.eval, "A1:B60"], [TABS.ficha, "A1:Z120"]];
   const have = want.filter(([tab]) => tabs.includes(tab));
   const got = await api().getMany(id, have.map(([tab, a1]) => tabRange(tab, a1)));
   const [chk, rel, ev, fi] = want.map((w) => (have.includes(w) ? got[have.indexOf(w)] : null));
@@ -539,12 +544,21 @@ function parseForm(rows, kind) {
     if (heading) {
       newSec(a);
       const cols = r.map((v, j) => ({ j, h: txt(v) })).filter((x) => x.j > 0 && x.h);
-      if (cols.length) { table = cols; sec.table = cols; sec.rows = []; }
+      if (cols.length) {
+        // Registro mensual: siempre 12 meses. Los que faltan en la planilla se agregan al lado (su título se escribe al cargar algo).
+        let next = cols[cols.length - 1].j + 1;
+        const missing = cols.length < 12;
+        while (cols.length < 12) cols.push({ j: next++, h: "Mes " + (cols.length + 1), missing: true });
+        // Al cargar algo en un mes nuevo se escriben todos los títulos de la fila juntos.
+        const head = missing ? encodeURIComponent(JSON.stringify({ cells: cols.map((c) => colLetter(c.j) + (i + 1)), titles: cols.map((c) => c.h) })) : "";
+        cols.forEach((c) => (c.head = c.missing ? head : ""));
+        table = cols; sec.table = cols; sec.rows = [];
+      }
       continue;
     }
     if (!sec) newSec("");
-    if (note) { sec.items.push({ note: a }); continue; }
-    if (table) { sec.rows.push({ row: i + 1, label: a, cells: table.map((c) => ({ col: c.j, value: txt(r[c.j]) })) }); continue; }
+    if (note) { if (!(table && /repetir este bloque/i.test(a))) sec.items.push({ note: a }); continue; }
+    if (table) { sec.rows.push({ row: i + 1, label: a, cells: table.map((c) => ({ col: c.j, value: txt(r[c.j]), head: c.head })) }); continue; }
     sec.items.push({ row: i + 1, label: a, value: txt(r[1]) });
   }
   return sections;
@@ -1287,10 +1301,10 @@ function formSections(sections, tab) {
         <div class="lbl">${esc(it.label.replace(/:\s*$/, ""))}</div>
         <div><textarea rows="1" data-tab="${esc(tab || TABS.ficha)}" data-cell="B${it.row}">${esc(it.value)}</textarea></div>
       </div>`).join("")}
-    ${s.table ? `<div style="overflow-x:auto"><table class="reg">
+    ${s.table ? `<div class="reg-wrap"><table class="reg">
       <tr><th></th>${s.table.map((c) => `<th>${esc(c.h)}</th>`).join("")}</tr>
       ${s.rows.map((r) => `<tr><th>${esc(r.label.replace(/:\s*$/, ""))}</th>${r.cells.map((c) =>
-        `<td><textarea rows="1" data-tab="${esc(tab || TABS.ficha)}" data-cell="${colLetter(c.col)}${r.row}">${esc(c.value)}</textarea></td>`).join("")}</tr>`).join("")}
+        `<td><textarea rows="1" data-tab="${esc(tab || TABS.ficha)}" data-cell="${colLetter(c.col)}${r.row}" ${c.head ? `data-head="${esc(c.head)}"` : ""}>${esc(c.value)}</textarea></td>`).join("")}</tr>`).join("")}
     </table></div>` : ""}
   </div>`).join("");
 }
@@ -1307,6 +1321,11 @@ function bindFormInputs(el, book) {
       try {
         await api().set(book.id, tabRange(t.dataset.tab, t.dataset.cell), [[t.value]]);
         t.dataset.orig = t.value;
+        if (t.dataset.head) {   // primer dato en un mes nuevo: le pone el título a la columna
+          const head = t.dataset.head, h = JSON.parse(decodeURIComponent(head));
+          for (let k = 0; k < h.cells.length; k++) await api().set(book.id, tabRange(t.dataset.tab, h.cells[k]), [[h.titles[k]]]);
+          el.querySelectorAll("textarea[data-head]").forEach((x) => { if (x.dataset.head === head) delete x.dataset.head; });
+        }
         const f = t.closest(".field"); if (f) f.classList.toggle("empty", !t.value.trim());
         delete state.cache[book.id];
         toast("Guardado");
