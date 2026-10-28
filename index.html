@@ -309,7 +309,7 @@ async function gfetch(url, opts = {}, retry = true, waits = 0) {
   if (res.status === 401 && retry) { token = null; store("adm_token"); return gfetch(url, opts, false, waits); }
   // Google limita las consultas por minuto: si se pasa, espera y vuelve a probar.
   if (res.status === 429 && waits < 3) { await sleep(15000 * (waits + 1)); return gfetch(url, opts, retry, waits + 1); }
-  if (res.status === 429) throw new Error("Google pidió esperar: hubo demasiadas consultas seguidas. Tocá Actualizar en un minuto.");
+  if (res.status === 429) throw new Error("Google pidió esperar: hubo demasiadas consultas seguidas. Tocá F5 en un minuto.");
   if (!res.ok) {
     let msg = res.status + "";
     try { const j = await res.json(); msg = j.error?.message || msg; } catch (e) {}
@@ -685,17 +685,49 @@ function go(page) {
   window.scrollTo(0, 0);
 }
 
-async function renderPage() {
-  const el = $("#page");
-  el.innerHTML = `<p class="loading">Cargando…</p>`;
+async function renderPage(quiet) {
+  const el = $("#page"), y = window.scrollY;
+  if (!quiet) el.innerHTML = `<p class="loading">Cargando…</p>`;
   try {
     const fn = { inicio: pageInicio, ficha: pageFicha, relev: pageRelev, checklist: pageChecklist, reuniones: pageReuniones }[state.page];
     await fn(el);
+    if (quiet) window.scrollTo(0, y);
   } catch (e) {
     el.innerHTML = `<div class="error">Algo falló: ${esc(e.message)}</div><button class="btn ghost" id="retry">Reintentar</button>`;
     $("#retry").onclick = () => { state.cache = {}; state.meetings = null; state.pasos = null; renderPage(); };
   }
 }
+
+/* ---------- refresco: trae lo que cargaron las demás ---------- */
+
+let lastRefresh = Date.now(), refreshing = false;
+
+// Vuelve a leer las planillas. Con quiet, la pantalla no se borra mientras carga.
+async function refresh(quiet) {
+  if (refreshing) return;
+  refreshing = true;
+  try {
+    forgetTabs(); state.cache = {}; state.meetings = null; state.pasos = null;
+    await loadIndex();
+    if (quiet) await Promise.all([...state.clients.map((c) => loadClientBook(c).catch(() => {})), loadPasos().catch(() => {})]);
+    lastRefresh = Date.now();
+    await renderPage(quiet);
+  } finally { refreshing = false; }
+}
+
+// No refresca si alguien está escribiendo o tiene un formulario abierto, para no borrarle nada.
+function busy() {
+  const a = document.activeElement;
+  if (a && $("#page")?.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
+  return ["#client-form", "#meeting-form"].some((s) => $(s)?.children.length);
+}
+
+function autoRefresh() {
+  if (state.mode !== "google" || document.hidden || busy()) return;
+  refresh(true).catch(() => {});
+}
+setInterval(() => { if (Date.now() - lastRefresh > 2 * 60 * 1000) autoRefresh(); }, 30 * 1000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - lastRefresh > 60 * 1000) autoRefresh(); });
 
 function demoBanner() {
   return state.mode === "demo" ? `<div class="banner">Estás viendo datos de ejemplo. Los cambios no se guardan en ninguna planilla.</div>` : "";
@@ -908,7 +940,7 @@ async function pageInicio(el) {
     <div class="topbar"><div><h1>Inicio</h1><p class="sub">${state.clients.length} clientes</p></div>
       <div class="row">
         ${state.mode === "google" ? `<a class="btn ghost small" href="${sheetUrl(CFG.indiceId)}" target="_blank" rel="noopener">Abrir planilla índice</a>` : ""}
-        <button class="btn ghost small" id="reload">Actualizar</button>
+        <button class="btn ghost small" id="reload" title="Volver a leer las planillas (el panel también lo hace solo cada 2 minutos)">F5</button>
         ${CFG.plantillaId && state.clients.some((c) => c.sheetId) ? `<button class="btn ghost small" id="sync">Actualizar desde el modelo</button>` : ""}
         <button class="btn small" id="new-client">+ Nuevo cliente</button>
       </div>
@@ -922,7 +954,7 @@ async function pageInicio(el) {
     <div class="grid">
       ${state.clients.map((c, i) => clientCard(c, books[i])).join("")}
     </div>`;
-  $("#reload").onclick = async () => { forgetTabs(); state.cache = {}; state.meetings = null; state.pasos = null; await loadIndex(); renderPage(); };
+  $("#reload").onclick = () => refresh();
   loadPasos().then(() => renderPasos($("#pasos")))
     .catch((e) => { if ($("#pasos")) $("#pasos").innerHTML = `<div class="card"><h2>Próximos pasos</h2><p class="error small">${esc(e.message)}</p></div>`; });
   el.querySelectorAll("[data-open]").forEach((b) => (b.onclick = () => { state.current = b.dataset.client; store("adm_client", state.current); go(b.dataset.open); }));
