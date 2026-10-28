@@ -12,6 +12,9 @@ window.PANEL_CONFIG = {
   // Planilla modelo que se copia para cada cliente nuevo (en "_Modelo de carpeta cliente").
   plantillaId: "1hFXwtN50tdfmaLiZLdbuHorBIQ0z584dDQ1yVLLiNz0",
 
+  // Planilla "Reuniones ADM" (en "2. ADM interno"), con una fila por reunión.
+  reunionesId: "1_Af638vdWvvX6DCgCFI0YFBVZV1NNnc0TqwO7-AJAQ8",
+
   // Socias, para elegir responsable en el checklist.
   socias: ["Celeste", "Caro", "Fer"],
 };
