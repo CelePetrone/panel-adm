@@ -53,7 +53,7 @@ window.DEMO_DATA = {
     "Celeste, Caro, Fer",
     "Primera reunión de socias: servicio, paquetes, pilotos",
     "Arrancar con un piloto el 1/11",
-    "Definir precio post piloto; definir quién factura",
+    "Todas: definir el precio después del piloto.\nCele: definir quién factura.",
     "",
     "Celeste"
    ],
@@ -64,7 +64,7 @@ window.DEMO_DATA = {
     "Celeste, Caro y el dueño",
     "Cómo cargan hoy la información",
     "Mandan extractos hasta el día 5",
-    "Pedir accesos de solo lectura al banco",
+    "Caro: pedir accesos de solo lectura al banco.\nCaro y Fer: armar el plan de cuentas.",
     "",
     "Caro"
    ]

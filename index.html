@@ -91,17 +91,39 @@
   .client-card dt { color: var(--muted); }
   .client-card dd { margin: 0; }
 
-  /* Calendario del mes */
-  .month { position: relative; height: 54px; margin: 8px 4px 4px; }
-  .month .track { position: absolute; left: 0; right: 0; top: 22px; height: 10px; border-radius: 99px; background: var(--line); }
-  .month .seg { position: absolute; top: 22px; height: 10px; }
-  .month .mark { position: absolute; top: 0; transform: translateX(-50%); font-size: 12px; font-weight: 700; color: var(--primary); text-align: center; }
-  .month .mark::after { content: ""; display: block; width: 2px; height: 30px; margin: 2px auto 0; background: var(--primary); }
-  .month .today { position: absolute; top: 18px; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; transform: translateX(-50%); box-shadow: 0 1px 3px rgba(0,0,0,.25); }
-  .phases { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 12px; }
-  .phase { padding: 10px; border-radius: 8px; background: var(--bg); font-size: 13px; }
-  .phase b { display: block; font-size: 13px; }
-  .phase.now { background: var(--accent-soft); outline: 2px solid var(--accent); }
+  /* Calendario del mes: de abajo (día 1) para arriba */
+  .home-grid { display: grid; grid-template-columns: minmax(250px, 1fr) 1.7fr; gap: 16px; align-items: start; }
+  .vline { margin-top: 8px; }
+  .vstep { display: grid; grid-template-columns: 52px 12px 1fr; gap: 0 12px; min-height: 64px; }
+  .vday { font-size: 12px; color: var(--muted); text-align: right; padding-top: 8px; }
+  .vday b { color: var(--primary); font-size: 14px; }
+  .vbar { position: relative; background: var(--line); }
+  .vstep:first-child .vbar { border-radius: 99px 99px 0 0; }
+  .vstep:last-child .vbar { border-radius: 0 0 99px 99px; }
+  .vstep.past .vbar, .vstep.now .vbar { background: var(--c); }
+  .vstep.now .vbar { background: linear-gradient(to top, var(--c) var(--fill), var(--line) var(--fill)); }
+  .vbar .today { position: absolute; left: 50%; bottom: var(--fill); width: 18px; height: 18px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; transform: translate(-50%, 50%); box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+  .vtext { font-size: 13px; padding: 6px 0 12px; }
+  .vtext b { display: block; font-size: 14px; }
+  .vstep.now .vtext b { color: var(--accent); }
+  .vstep.future .vtext { opacity: .75; }
+
+  /* Próximos pasos */
+  .paso { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0 10px 12px; border-top: 1px solid var(--line); border-left: 4px solid var(--st); }
+  .paso-main { flex: 1; min-width: 0; }
+  .paso-text { font-size: 14px; }
+  .paso.listo .paso-text { color: var(--muted); text-decoration: line-through; }
+  .paso-ctrl { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+  .chips { display: flex; gap: 4px; flex-wrap: wrap; }
+  .chip { border: 1px solid var(--line); background: #fff; color: var(--muted); border-radius: 99px; padding: 2px 9px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  .chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+  select.estado { width: auto; padding: 4px 8px; font-size: 13px; font-weight: 600; border-radius: 99px; border: 0; background: var(--st-soft); color: var(--st-ink); cursor: pointer; }
+  .st-pend { --st: #E8873A; --st-soft: #FCE6D4; --st-ink: #8A4512; }
+  .st-proc { --st: #E5B800; --st-soft: #FFF4C2; --st-ink: #6E5600; }
+  .st-listo { --st: var(--ok); --st-soft: var(--ok-soft); --st-ink: var(--ok); }
+  .paso-add { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-bottom: 10px; }
+  .paso-add .row { grid-column: 1 / -1; }
+  details.listos summary { cursor: pointer; font-size: 14px; color: var(--muted); padding: 10px 0 4px; border-top: 1px solid var(--line); }
 
   /* Checklist */
   .stage-head { display: flex; align-items: center; gap: 12px; cursor: pointer; }
@@ -166,7 +188,8 @@
     main { padding: 18px 16px 90px; }
     .field { grid-template-columns: 1fr; gap: 4px; }
     .field .lbl { padding-top: 0; }
-    .phases { grid-template-columns: 1fr 1fr; }
+    .home-grid { grid-template-columns: 1fr; }
+    .home-grid .pasos-col { order: -1; }
     .form-grid { grid-template-columns: 1fr; }
     .stage-head .bar { width: 70px; }
     select.client-select { width: 100%; }
@@ -208,6 +231,7 @@ const state = {
   current: null,       // nombre del cliente elegido
   cache: {},           // datos por planilla
   meetings: null,
+  pasos: null,
   collapsed: {},
   error: null,
 };
@@ -550,7 +574,7 @@ function renderLogin(msg) {
 
 async function start(mode, interactive, forceConsent) {
   state.mode = mode;
-  state.cache = {}; state.meetings = null;
+  state.cache = {}; state.meetings = null; state.pasos = null;
   CFG.indiceId_active = mode === "demo" ? "INDICE" : CFG.indiceId;
   store("adm_mode", mode);
   $("#root").innerHTML = `<div class="login"><p class="loading">Cargando…</p></div>`;
@@ -633,7 +657,7 @@ async function renderPage() {
     await fn(el);
   } catch (e) {
     el.innerHTML = `<div class="error">Algo falló: ${esc(e.message)}</div><button class="btn ghost" id="retry">Reintentar</button>`;
-    $("#retry").onclick = () => { state.cache = {}; state.meetings = null; renderPage(); };
+    $("#retry").onclick = () => { state.cache = {}; state.meetings = null; state.pasos = null; renderPage(); };
   }
 }
 
@@ -668,23 +692,144 @@ function monthCard() {
   const now = new Date();
   const day = now.getDate();
   const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const pct = (d) => ((d - 1) / (last - 1)) * 100;
-  const ph = phaseFor(day);
-  const mes = now.toLocaleDateString("es-AR", { month: "long", year: "numeric" });
-  const colors = ["#C9D6E6", "#AFC3DB", "#2F4B6E", "#D9B79F", "#C36A3D"];
+  const mes = now.toLocaleDateString("es-AR", { month: "long" });
+  const colors = ["#C9D6E6", "#AFC3DB", "#2F4B6E", "#D9B79F", "#C36A3D", "#B9C7B2"];
+  const steps = [...PHASES, { from: 18, to: last, name: "Preparación", text: "Revisar pendientes y preparar el próximo cierre." }];
+  const dayLabel = (p) => (p.from === p.to ? `<b>${p.from}</b>` : `${[5, 10, 15].includes(p.from) ? `<b>${p.from}</b>` : p.from} a ${[5, 10, 15].includes(p.to) ? `<b>${p.to}</b>` : p.to}`);
   return `<div class="card">
-    <div class="row"><h2 style="margin:0">Cómo viene el mes</h2><span class="spacer"></span><span class="muted small">Hoy es ${day} de ${esc(mes)}</span></div>
-    <div class="month">
-      <div class="track"></div>
-      ${PHASES.map((p, i) => `<div class="seg" style="left:${pct(p.from)}%;width:${Math.max(pct(p.to + 1) - pct(p.from), 1)}%;background:${colors[i]}"></div>`).join("")}
-      ${[5, 10, 15].map((d) => `<div class="mark" style="left:${pct(d)}%">${d}</div>`).join("")}
-      <div class="today" style="left:${pct(day)}%" title="Hoy"></div>
+    <h2 style="margin:0">Cómo viene el mes</h2>
+    <p class="muted small" style="margin:4px 0 0">Hoy es ${day} de ${esc(mes)}</p>
+    <div class="vline">
+      ${steps.map((p, i) => {
+        const when = day > p.to ? "past" : day < p.from ? "future" : "now";
+        const fill = Math.round(((day - p.from + 0.5) / (p.to - p.from + 1)) * 100);
+        return `<div class="vstep ${when}" style="--c:${colors[i]};--fill:${fill}%">
+          <div class="vday">${dayLabel(p)}</div>
+          <div class="vbar">${when === "now" ? `<span class="today" title="Hoy"></span>` : ""}</div>
+          <div class="vtext"><b>${esc(p.name)}</b><span class="muted">${esc(p.text)}</span></div>
+        </div>`;
+      }).reverse().join("")}
     </div>
-    <div class="phases">
-      ${PHASES.map((p, i) => `<div class="phase ${i === ph ? "now" : ""}"><b>${p.from === p.to ? "Día " + p.from : "Días " + p.from + " a " + p.to}</b>${p.name}<div class="muted">${p.text}</div></div>`).join("")}
-    </div>
-    ${ph < 0 ? `<p class="muted small" style="margin-bottom:0">Ya pasó la reunión del mes: buen momento para preparar el próximo cierre.</p>` : ""}
   </div>`;
+}
+
+/* Próximos pasos: viven en la pestaña "Próximos pasos" de la planilla de reuniones.
+   Los pendientes de cada minuta se pasan solos la primera vez que se abre el panel después de cargarla. */
+const PASOS_TAB = "Próximos pasos";
+const PASOS_HEAD = ["Paso", "Cliente", "Responsables", "Estado", "Origen", "Fecha"];
+const ESTADOS = [{ name: "Pendiente", cls: "st-pend" }, { name: "En proceso", cls: "st-proc" }, { name: "Listo", cls: "st-listo" }];
+const estadoDe = (v) => ESTADOS.find((e) => e.name.toLowerCase() === txt(v).toLowerCase()) || ESTADOS[0];
+const hoyTexto = () => { const d = new Date(); return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`; };
+
+// "Cele: juntar info de Es Kefir." → { text: "Juntar info de Es Kefir.", resp: ["Celeste"] }. "Todas:" son las tres.
+function splitPendientes(texto) {
+  const socias = CFG.socias || [];
+  return String(texto || "").split(/\n+/).map((l) => l.replace(/^[-•*\s]+/, "").trim()).filter(Boolean).map((l) => {
+    const m = l.match(/^([^:]{2,30}):\s*(.+)$/);
+    if (!m) return { text: l, resp: [] };
+    const who = m[1].toLowerCase().split(/\s*(?:,|\by\b)\s*/).filter(Boolean);
+    const resp = who.some((w) => /^tod[ao]s$/.test(w)) ? [...socias]
+      : socias.filter((s) => who.some((w) => s.toLowerCase().startsWith(w) || w.startsWith(s.toLowerCase())));
+    if (!resp.length) return { text: l, resp: [] };
+    return { text: m[2].charAt(0).toUpperCase() + m[2].slice(1), resp };
+  });
+}
+
+async function loadPasos(force) {
+  if (state.pasos && !force) return state.pasos;
+  const place = await meetingsPlace();
+  const read = async () => (await api().get(place.id, tabRange(PASOS_TAB, "A1:F1000"))).slice(1).map((r, i) => ({
+    row: i + 2, text: txt(r[0]), cliente: txt(r[1]), resp: txt(r[2]).split(/\s*,\s*/).filter(Boolean),
+    estado: estadoDe(r[3]).name, origen: txt(r[4]), fecha: txt(r[5]),
+  })).filter((p) => p.text);
+  if (!(await api().tabs(place.id)).includes(PASOS_TAB)) {
+    await api().addTab(place.id, PASOS_TAB);
+    await api().set(place.id, tabRange(PASOS_TAB, "A1:F1"), [PASOS_HEAD]);
+  }
+  let pasos = await read();
+  const origins = new Set(pasos.map((p) => p.origen));
+  const nuevos = [];
+  for (const m of await loadMeetings()) {
+    const origen = `Reunión ${m.fecha}${m.cliente ? " · " + m.cliente : ""}`;
+    if (!m.pendientes || origins.has(origen)) continue;
+    splitPendientes(m.pendientes).forEach((x) => nuevos.push([x.text, m.cliente === "Interna" ? "" : m.cliente, x.resp.join(", "), "Pendiente", origen, m.fecha]));
+  }
+  if (nuevos.length) { await api().append(place.id, tabRange(PASOS_TAB, "A1:F1"), nuevos); pasos = await read(); }
+  state.pasos = { place, list: pasos };
+  return state.pasos;
+}
+
+function chipsHtml(selected, attrs = "") {
+  return `<div class="chips">${(CFG.socias || []).map((s) => `<button type="button" class="chip ${selected.includes(s) ? "on" : ""}" data-socia="${esc(s)}" ${attrs}>${esc(s)}</button>`).join("")}</div>`;
+}
+
+function pasoHtml(p) {
+  const st = estadoDe(p.estado);
+  return `<div class="paso ${st.cls} ${st.name === "Listo" ? "listo" : ""}" data-row="${p.row}">
+    <div class="paso-main">
+      <div class="paso-text">${esc(p.text)}</div>
+      <div class="small muted">${[p.cliente, p.origen.startsWith("Reunión") ? p.origen.replace(/ · .*/, "") : ""].filter(Boolean).map(esc).join(" · ")}</div>
+    </div>
+    <div class="paso-ctrl">
+      <select class="estado ${st.cls}" aria-label="Estado">${ESTADOS.map((e) => `<option ${e.name === st.name ? "selected" : ""}>${e.name}</option>`).join("")}</select>
+      ${chipsHtml(p.resp)}
+    </div>
+  </div>`;
+}
+
+function renderPasos(box) {
+  const data = state.pasos;
+  if (!data || !box) return;
+  const orden = { "En proceso": 0, Pendiente: 1 };
+  const abiertos = data.list.filter((p) => p.estado !== "Listo").sort((a, b) => orden[a.estado] - orden[b.estado] || a.row - b.row);
+  const listos = data.list.filter((p) => p.estado === "Listo").reverse();
+  box.innerHTML = `<div class="card">
+    <div class="row"><h2 style="margin:0">Próximos pasos</h2><span class="spacer"></span>
+      ${state.mode === "google" ? `<a class="small" href="${sheetUrl(data.place.id)}" target="_blank" rel="noopener">Abrir planilla</a>` : ""}</div>
+    <p class="muted small" style="margin:4px 0 12px">Los pendientes de las minutas aparecen solos. Podés sumar otros cuando quieras.</p>
+    <form class="paso-add" id="paso-add">
+      <input type="text" name="text" placeholder="Nuevo paso…" required>
+      <button class="btn small">Agregar</button>
+      <div class="row small">
+        <select name="cliente" style="width:auto"><option value="">Sin cliente</option>${state.clients.map((c) => `<option>${esc(c.name)}</option>`).join("")}</select>
+        ${chipsHtml([])}
+      </div>
+    </form>
+    ${abiertos.length ? abiertos.map(pasoHtml).join("") : `<p class="muted small" style="border-top:1px solid var(--line);padding-top:10px">No hay pasos pendientes.</p>`}
+    ${listos.length ? `<details class="listos" ${state.showListos ? "open" : ""}><summary>Listos (${listos.length})</summary>${listos.map(pasoHtml).join("")}</details>` : ""}
+  </div>`;
+
+  const save = async (p, col, value, ok) => {
+    try { await api().set(data.place.id, tabRange(PASOS_TAB, col + p.row), [[value]]); ok(); renderPasos(box); }
+    catch (e) { toast("No se pudo guardar: " + e.message); }
+  };
+  const find = (el) => data.list.find((p) => p.row === +el.closest(".paso").dataset.row);
+  box.querySelectorAll(".paso select.estado").forEach((sel) => (sel.onchange = () => {
+    const p = find(sel); save(p, "D", sel.value, () => (p.estado = sel.value));
+  }));
+  box.querySelectorAll(".paso .chip").forEach((b) => (b.onclick = () => {
+    const p = find(b), s = b.dataset.socia;
+    const resp = p.resp.includes(s) ? p.resp.filter((x) => x !== s) : (CFG.socias || []).filter((x) => x === s || p.resp.includes(x));
+    save(p, "C", resp.join(", "), () => (p.resp = resp));
+  }));
+  const det = box.querySelector("details.listos");
+  if (det) det.ontoggle = () => (state.showListos = det.open);
+  const form = $("#paso-add", box);
+  form.querySelectorAll(".chip").forEach((b) => (b.onclick = () => b.classList.toggle("on")));
+  form.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const f = new FormData(form), text = txt(f.get("text"));
+    if (!text) return;
+    const resp = [...form.querySelectorAll(".chip.on")].map((b) => b.dataset.socia);
+    form.querySelector("button.btn").disabled = true;
+    try {
+      await api().append(data.place.id, tabRange(PASOS_TAB, "A1:F1"),
+        [[text, f.get("cliente"), resp.join(", "), "Pendiente", "Agregado" + (state.user?.given_name ? " por " + state.user.given_name : ""), hoyTexto()]]);
+      await loadPasos(true);
+      renderPasos(box);
+      $("#paso-add input", box).focus();
+    } catch (e) { form.querySelector("button.btn").disabled = false; toast("No se pudo agregar: " + e.message); }
+  };
 }
 
 function checklistStats(chk) {
@@ -717,11 +862,16 @@ async function pageInicio(el) {
     ${state.lastCreated ? `<div class="banner">Se creó la planilla de <b>${esc(state.lastCreated.name)}</b> en tu "Mi unidad" de Drive.
       Movela a la carpeta del cliente para que las demás socias también la vean.
       <a href="${sheetUrl(state.lastCreated.id)}" target="_blank" rel="noopener">Abrir planilla</a></div>` : ""}
-    ${monthCard()}
+    <div class="home-grid">
+      <div>${monthCard()}</div>
+      <div class="pasos-col" id="pasos"><div class="card muted">Cargando próximos pasos…</div></div>
+    </div>
     <div class="grid">
       ${state.clients.map((c, i) => clientCard(c, books[i])).join("")}
     </div>`;
-  $("#reload").onclick = async () => { state.cache = {}; await loadIndex(); renderPage(); };
+  $("#reload").onclick = async () => { state.cache = {}; state.meetings = null; state.pasos = null; await loadIndex(); renderPage(); };
+  loadPasos().then(() => renderPasos($("#pasos")))
+    .catch((e) => { if ($("#pasos")) $("#pasos").innerHTML = `<div class="card"><h2>Próximos pasos</h2><p class="error small">${esc(e.message)}</p></div>`; });
   el.querySelectorAll("[data-open]").forEach((b) => (b.onclick = () => { state.current = b.dataset.client; store("adm_client", state.current); go(b.dataset.open); }));
   el.querySelectorAll("[data-link]").forEach((f) => (f.onsubmit = (ev) => { ev.preventDefault(); linkSheet(f.dataset.link, f.querySelector("input").value); }));
   el.querySelectorAll("[data-create]").forEach((b) => (b.onclick = () => createSheetFor(b.dataset.create, b)));
@@ -1199,6 +1349,7 @@ function showMeetingForm() {
       }
       await api().append(place.id, tabRange(place.tab, "A1:I1"), [row]);
       await loadMeetings(true);
+      state.pasos = null;   // sus pendientes pasan a Próximos pasos
       toast("Reunión guardada");
       renderPage();
     } catch (e) { btn.disabled = false; toast("No se pudo guardar: " + e.message); }
