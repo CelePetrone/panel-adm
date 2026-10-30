@@ -202,6 +202,7 @@
   .savebar b { flex: 1; }
   textarea.dirty, select.dirty { background: #FFF4CC; border-color: #E8C547; }
   .task.dirty, .paso.dirty { background: #FFF8DC; border-radius: 8px; }
+  .reconnect { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 25; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center; background: var(--ink); color: #fff; padding: 10px 14px; border-radius: 10px; font-size: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.2); width: max-content; max-width: calc(100% - 32px); }
   .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 30; display: flex; align-items: center; justify-content: center; padding: 16px; }
   .modal-bg .card { max-width: 380px; width: 100%; margin: 0; }
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 14px; z-index: 20; }
@@ -293,8 +294,9 @@ function toast(msg) {
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2200);
 }
-function store(key, val) { try { val === undefined ? sessionStorage.removeItem(key) : sessionStorage.setItem(key, JSON.stringify(val)); } catch (e) {} }
-function recall(key) { try { return JSON.parse(sessionStorage.getItem(key)); } catch (e) { return null; } }
+// Queda guardado en este navegador aunque se cierre la app (el pase de Google igual vence a la hora).
+function store(key, val) { try { val === undefined ? localStorage.removeItem(key) : localStorage.setItem(key, JSON.stringify(val)); } catch (e) {} }
+function recall(key) { try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; } }
 
 /* ---------- acceso a datos: Google Sheets o datos de ejemplo ---------- */
 
@@ -324,13 +326,33 @@ function requestToken(prompt) {
         },
       });
     }
-    tokenClient.requestAccessToken({ prompt });
+    // Con el mail de la última vez, Google no vuelve a preguntar qué cuenta usar.
+    tokenClient.requestAccessToken({ prompt, login_hint: recall("adm_email") || undefined });
   });
 }
 
+const EXPIRED = "Se venció la conexión con Google";
+const tokenOk = () => token && token.exp > Date.now();
+
+// Google da un pase de 1 hora. Cuando vence en pleno uso, se renueva con un toque, sin perder lo que no se guardó.
 async function getToken() {
-  if (token && token.exp > Date.now()) return token.value;
+  if (tokenOk()) return token.value;
+  if (state.user) { showReconnect(); throw new Error(EXPIRED + ". Tocá Seguir conectada, arriba."); }
   return requestToken("");
+}
+
+function showReconnect() {
+  if ($("#reconnect")) return;
+  const bar = document.createElement("div");
+  bar.id = "reconnect"; bar.className = "reconnect";
+  bar.innerHTML = `<span>La conexión con Google se renueva cada 1 hora.</span><button class="btn small">Seguir conectada</button>`;
+  bar.querySelector("button").onclick = async () => {
+    try { await requestToken(""); } catch (e) { toast("No se pudo renovar: " + e.message); return; }
+    bar.remove();
+    if (!pending.size) refresh(true).catch(() => {});
+    else toast("Listo. Ya podés guardar.");
+  };
+  document.body.appendChild(bar);
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -635,7 +657,7 @@ function renderLogin(msg) {
       ${msg ? `<div class="error" style="margin-top:16px">${esc(msg)}</div>` : ""}
       <div class="card" style="margin-top:20px">
         ${hasGoogle
-          ? `<p style="margin-top:0">Entrá con tu cuenta de Google. Vas a ver los clientes de las planillas que tengas compartidas.</p>
+          ? `<p style="margin-top:0">${recall("adm_email") ? "Tocá Entrar con Google para seguir. Google pide confirmar una vez por hora." : "Entrá con tu cuenta de Google. Vas a ver los clientes de las planillas que tengas compartidas."}</p>
              <button class="btn" id="btn-google" style="width:100%">Entrar con Google</button>`
           : `<p style="margin-top:0">Todavía falta conectar el panel con Google. Mientras tanto podés recorrerlo con datos de ejemplo.</p>`}
         <button class="btn ghost" id="btn-demo" style="width:100%;margin-top:10px">Ver con datos de ejemplo</button>
@@ -656,6 +678,7 @@ async function start(mode, interactive, forceConsent) {
       if (!window.google?.accounts?.oauth2) await waitForGoogle();
       if (interactive) await requestToken(forceConsent ? "consent" : "");
       state.user = await googleApi.me();
+      if (state.user?.email) store("adm_email", state.user.email);
     } else {
       state.user = { given_name: "Demo" };
     }
@@ -681,7 +704,7 @@ function waitForGoogle() {
 
 function logout() {
   if (state.mode === "google" && token && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(token.value, () => {});
-  token = null; store("adm_token"); store("adm_mode");
+  token = null; store("adm_token"); store("adm_mode"); store("adm_email");
   state.mode = null; state.user = null;
   renderLogin();
 }
@@ -731,6 +754,7 @@ async function renderPage(quiet) {
     updateSaveBar();
     if (quiet) window.scrollTo(0, y);
   } catch (e) {
+    if (e.message.startsWith(EXPIRED)) { el.innerHTML = `<p class="loading">${esc(e.message)}</p>`; return; }
     el.innerHTML = `<div class="error">Algo falló: ${esc(e.message)}</div><button class="btn ghost" id="retry">Reintentar</button>`;
     $("#retry").onclick = () => { state.cache = {}; state.meetings = null; state.pasos = null; renderPage(); };
   }
@@ -763,6 +787,7 @@ function busy() {
 
 function autoRefresh() {
   if (state.mode !== "google" || document.hidden || busy()) return;
+  if (!tokenOk()) return showReconnect();
   refresh(true).catch(() => {});
 }
 setInterval(() => { if (Date.now() - lastRefresh > 2 * 60 * 1000) autoRefresh(); }, 30 * 1000);
@@ -796,6 +821,9 @@ function updateSaveBar() {
 
 async function saveAll() {
   if (!pending.size) return true;
+  if (state.mode === "google" && !tokenOk()) {   // vencido: se renueva acá mismo, con el toque en Guardar
+    try { await requestToken(""); $("#reconnect")?.remove(); } catch (e) { showReconnect(); return false; }
+  }
   const ids = {};
   pending.forEach((w) => (ids[w.id] = ids[w.id] || []).push({ range: w.range, values: [[w.value]] }));
   const btn = $("#savebar [data-act=save]");
