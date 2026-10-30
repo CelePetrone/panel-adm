@@ -28,7 +28,9 @@ Para pasar el cambio a los clientes que ya existen: en Inicio, **Actualizar desd
 - Si una fila ya no está en el modelo, o se cambió su texto, sus datos no pasan a la versión nueva. Por las dudas, la planilla como estaba queda en pestañas ocultas que empiezan con **Anterior ·** (en Sheets: menú Ver › Hojas ocultas). Cada vez que se actualiza, esas copias se reemplazan por las nuevas.
 - Las pestañas que no están en el modelo no se tocan.
 
-Lo que se carga en el panel se guarda al instante en la planilla. El panel trae solo lo que cargaron las demás cada 2 minutos y cuando se vuelve a la pestaña, salvo que estés escribiendo. Para verlo en el momento: botón **F5**.
+Lo que se cambia en el panel (tildes, responsables, respuestas, estados de los pasos) queda marcado en amarillo y **no se guarda hasta tocar 💾 Guardar**, en la barra amarilla de arriba. **Descartar** vuelve todo a como está en la planilla. Si cambiás de pestaña, de cliente o tocás F5 con cambios sin guardar, el panel pregunta qué hacer. Agregar un paso, una reunión o un cliente nuevo se guarda directo con su propio botón.
+
+El panel trae solo lo que cargaron las demás cada 2 minutos y cuando se vuelve a la pestaña, salvo que estés escribiendo o tengas cambios sin guardar. Para verlo en el momento: botón **F5**.
 
 ## Probarlo sin conectar nada
 
