@@ -198,6 +198,12 @@
   .sync-list { margin: 4px 0 8px; padding-left: 20px; font-size: 14px; }
   .error { background: #FDECEC; color: #8A1C1C; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 14px; }
   .loading { color: var(--muted); padding: 30px 0; }
+  .savebar { position: sticky; top: 0; z-index: 15; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; background: #FFF4CC; border: 1px solid #E8C547; color: #6B5200; border-radius: 10px; padding: 10px 14px; margin: -8px 0 16px; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+  .savebar b { flex: 1; }
+  textarea.dirty, select.dirty { background: #FFF4CC; border-color: #E8C547; }
+  .task.dirty, .paso.dirty { background: #FFF8DC; border-radius: 8px; }
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 30; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .modal-bg .card { max-width: 380px; width: 100%; margin: 0; }
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 8px; font-size: 14px; z-index: 20; }
 
   /* Celular */
@@ -373,6 +379,11 @@ const googleApi = {
     await gfetch(SHEETS + id + "/values/" + encodeURIComponent(range) + "?valueInputOption=USER_ENTERED",
       { method: "PUT", body: JSON.stringify({ values }) });
   },
+  // Varias celdas sueltas de la misma planilla en una sola escritura.
+  async setMany(id, data) {
+    await gfetch(SHEETS + id + "/values:batchUpdate",
+      { method: "POST", body: JSON.stringify({ valueInputOption: "USER_ENTERED", data }) });
+  },
   async append(id, range, values) {
     await gfetch(SHEETS + id + "/values/" + encodeURIComponent(range) + ":append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS",
       { method: "POST", body: JSON.stringify({ values }) });
@@ -478,6 +489,7 @@ const demoApi = {
       rows[r][p.c1 + j] = v;
     }));
   },
+  async setMany(id, data) { for (const d of data) await this.set(id, d.range, d.values); },
   async append(id, range, values) { const p = parseA1(range); demoBook(id)[p.tab].push(...values); },
   async addTab(id, title) { demoBook(id)[title] = []; },
   async me() { return { given_name: "Demo" }; },
@@ -697,8 +709,8 @@ function renderApp() {
       </nav>
       <main id="page"></main>
     </div>`;
-  document.querySelectorAll(".nav-item").forEach((b) => (b.onclick = () => go(b.dataset.page)));
-  $("#btn-out").onclick = logout;
+  document.querySelectorAll(".nav-item").forEach((b) => (b.onclick = () => leaveOk(() => go(b.dataset.page))));
+  $("#btn-out").onclick = () => leaveOk(logout);
   renderPage();
 }
 
@@ -716,6 +728,7 @@ async function renderPage(quiet) {
   try {
     const fn = { inicio: pageInicio, ficha: pageFicha, relev: pageRelev, checklist: pageChecklist, reuniones: pageReuniones }[state.page];
     await fn(el);
+    updateSaveBar();
     if (quiet) window.scrollTo(0, y);
   } catch (e) {
     el.innerHTML = `<div class="error">Algo falló: ${esc(e.message)}</div><button class="btn ghost" id="retry">Reintentar</button>`;
@@ -742,6 +755,7 @@ async function refresh(quiet) {
 
 // No refresca si alguien está escribiendo o tiene un formulario abierto, para no borrarle nada.
 function busy() {
+  if (pending.size) return true;
   const a = document.activeElement;
   if (a && $("#page")?.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
   return ["#client-form", "#meeting-form"].some((s) => $(s)?.children.length);
@@ -754,6 +768,82 @@ function autoRefresh() {
 setInterval(() => { if (Date.now() - lastRefresh > 2 * 60 * 1000) autoRefresh(); }, 30 * 1000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - lastRefresh > 60 * 1000) autoRefresh(); });
 
+/* ---------- cambios sin guardar ---------- */
+
+// Lo que se toca en el panel queda acá, marcado en amarillo, hasta que se aprieta Guardar.
+const pending = new Map();   // "planilla|rango" -> { id, range, value }
+const pkey = (id, range) => id + "|" + range;
+// auto: lo agrega el panel solo (como los títulos de un mes nuevo) y no se cuenta como cambio.
+function stage(id, range, value, auto) { pending.set(pkey(id, range), { id, range, value, auto }); updateSaveBar(); }
+const changeCount = () => [...pending.values()].filter((w) => !w.auto).length;
+const staged = (id, range) => pending.has(pkey(id, range));
+
+function updateSaveBar() {
+  let bar = $("#savebar");
+  if (!pending.size) { if (bar) bar.remove(); return; }
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "savebar"; bar.className = "savebar";
+    bar.innerHTML = `<b></b><button class="btn ghost small" data-act="discard">Descartar</button><button class="btn small" data-act="save">💾 Guardar</button>`;
+    bar.querySelector("[data-act=save]").onclick = () => saveAll();
+    bar.querySelector("[data-act=discard]").onclick = () => { if (confirm("¿Descartar los cambios sin guardar?")) discardAll(); };
+  }
+  const page = $("#page");
+  if (page && bar.parentElement !== page) page.prepend(bar);
+  const n = changeCount();
+  bar.querySelector("b").textContent = n === 1 ? "1 cambio sin guardar" : `${n} cambios sin guardar`;
+}
+
+async function saveAll() {
+  if (!pending.size) return true;
+  const ids = {};
+  pending.forEach((w) => (ids[w.id] = ids[w.id] || []).push({ range: w.range, values: [[w.value]] }));
+  const btn = $("#savebar [data-act=save]");
+  if (btn) btn.disabled = true;
+  try {
+    for (const id in ids) {
+      await api().setMany(id, ids[id]);
+      ids[id].forEach((d) => pending.delete(pkey(id, d.range)));
+    }
+  } catch (e) {
+    if (btn) btn.disabled = false;
+    updateSaveBar();
+    toast("No se pudo guardar: " + e.message);
+    return false;
+  }
+  toast("Guardado");
+  await refresh(true).catch(() => renderPage(true));
+  return true;
+}
+
+async function discardAll() {
+  pending.clear();
+  await refresh(true).catch(() => renderPage(true));
+}
+
+// Antes de cambiar de pestaña, de cliente o de recargar: si hay cambios sin guardar, pregunta qué hacer.
+function leaveOk(next, cancel) {
+  if (!pending.size) return next();
+  const bg = document.createElement("div");
+  bg.className = "modal-bg";
+  bg.innerHTML = `<div class="card"><h2 style="margin-top:0">Tenés cambios sin guardar</h2>
+    <p class="muted">¿Qué hacemos con ${changeCount() === 1 ? "el cambio" : `los ${changeCount()} cambios`}?</p>
+    <div class="row" style="justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn ghost small" data-act="stay">Seguir acá</button>
+      <button class="btn ghost small" data-act="drop">No guardar</button>
+      <button class="btn small" data-act="save">💾 Guardar</button>
+    </div></div>`;
+  document.body.appendChild(bg);
+  const close = () => bg.remove();
+  bg.querySelector("[data-act=stay]").onclick = () => { close(); cancel && cancel(); };
+  bg.querySelector("[data-act=drop]").onclick = () => { close(); pending.clear(); state.cache = {}; state.pasos = null; updateSaveBar(); next(); };
+  bg.querySelector("[data-act=save]").onclick = async () => { close(); if (await saveAll()) next(); else cancel && cancel(); };
+}
+window.addEventListener("beforeunload", (e) => {
+  const typing = [...document.querySelectorAll("textarea[data-cell]")].some((t) => t.value !== t.dataset.orig);
+  if (pending.size || typing) { e.preventDefault(); e.returnValue = ""; }
+});
+
 function demoBanner() {
   return state.mode === "demo" ? `<div class="banner">Estás viendo datos de ejemplo. Los cambios no se guardan en ninguna planilla.</div>` : "";
 }
@@ -765,7 +855,7 @@ function clientPicker() {
 }
 function bindClientPicker() {
   const s = $("#client-select");
-  if (s) s.onchange = () => { state.current = s.value; store("adm_client", s.value); renderPage(); };
+  if (s) s.onchange = () => leaveOk(() => { state.current = s.value; store("adm_client", s.value); renderPage(); }, () => (s.value = state.current));
 }
 const currentClient = () => state.clients.find((c) => c.name === state.current);
 
@@ -865,7 +955,8 @@ function clienteSelect(value, cls) {
 
 function pasoHtml(p) {
   const st = estadoDe(p.estado);
-  return `<div class="paso ${st.cls} ${st.name === "Listo" ? "listo" : ""}" data-row="${p.row}">
+  const dirty = state.pasos && ["B", "C", "D"].some((c) => staged(state.pasos.place.id, tabRange(PASOS_TAB, c + p.row)));
+  return `<div class="paso ${st.cls} ${st.name === "Listo" ? "listo" : ""} ${dirty ? "dirty" : ""}" data-row="${p.row}">
     <div class="paso-main">
       <div class="paso-text">${esc(p.text)}</div>
       <div class="row small" style="margin-top:4px;gap:8px">
@@ -904,10 +995,7 @@ function renderPasos(box) {
     ${listos.length ? `<details class="listos" ${state.showListos ? "open" : ""}><summary>Listos (${listos.length})</summary>${listos.map(pasoHtml).join("")}</details>` : ""}
   </div>`;
 
-  const save = async (p, col, value, ok) => {
-    try { await api().set(data.place.id, tabRange(PASOS_TAB, col + p.row), [[value]]); ok(); renderPasos(box); }
-    catch (e) { toast("No se pudo guardar: " + e.message); }
-  };
+  const save = (p, col, value, ok) => { stage(data.place.id, tabRange(PASOS_TAB, col + p.row), value); ok(); renderPasos(box); };
   const find = (el) => data.list.find((p) => p.row === +el.closest(".paso").dataset.row);
   box.querySelectorAll(".paso select.estado").forEach((sel) => (sel.onchange = () => {
     const p = find(sel); save(p, "D", sel.value, () => (p.estado = sel.value));
@@ -979,7 +1067,7 @@ async function pageInicio(el) {
     <div class="grid">
       ${state.clients.map((c, i) => clientCard(c, books[i])).join("")}
     </div>`;
-  $("#reload").onclick = () => refresh();
+  $("#reload").onclick = () => leaveOk(() => refresh());
   loadPasos().then(() => renderPasos($("#pasos")))
     .catch((e) => { if ($("#pasos")) $("#pasos").innerHTML = `<div class="card"><h2>Próximos pasos</h2><p class="error small">${esc(e.message)}</p></div>`; });
   el.querySelectorAll("[data-open]").forEach((b) => (b.onclick = () => { state.current = b.dataset.client; store("adm_client", state.current); go(b.dataset.open); }));
@@ -1292,19 +1380,23 @@ async function pageChecklist(el) {
     card.classList.toggle("collapsed");
     h.lastElementChild.textContent = state.collapsed[key] ? "▸" : "▾";
   }));
-  el.querySelectorAll("input[data-row]").forEach((cb) => (cb.onchange = async () => {
-    const row = +cb.dataset.row, task = findTask(chk, row);
-    cb.closest(".task").classList.toggle("done", cb.checked);
-    try {
-      await api().set(book.id, tabRange(TABS.checklist, "C" + row), [[cb.checked]]);
-      task.done = cb.checked;
+  const markTask = (row, x) => { if (staged(book.id, tabRange(TABS.checklist, "C" + row)) || staged(book.id, tabRange(TABS.checklist, "D" + row))) x.closest(".task").classList.add("dirty"); };
+  el.querySelectorAll("input[data-row]").forEach((cb) => {
+    markTask(+cb.dataset.row, cb);
+    cb.onchange = () => {
+      const row = +cb.dataset.row;
+      cb.closest(".task").classList.toggle("done", cb.checked);
+      stage(book.id, tabRange(TABS.checklist, "C" + row), cb.checked);
+      findTask(chk, row).done = cb.checked;
       refreshStageCounts(cb.closest("[data-stage]"));
-    } catch (e) { cb.checked = !cb.checked; cb.closest(".task").classList.toggle("done", cb.checked); toast("No se pudo guardar: " + e.message); }
-  }));
-  el.querySelectorAll("select[data-resp]").forEach((s) => (s.onchange = async () => {
+      markTask(row, cb);
+    };
+  });
+  el.querySelectorAll("select[data-resp]").forEach((s) => (s.onchange = () => {
     const row = +s.dataset.resp;
-    try { await api().set(book.id, tabRange(TABS.checklist, "D" + row), [[s.value]]); findTask(chk, row).resp = s.value; toast("Guardado"); }
-    catch (e) { toast("No se pudo guardar: " + e.message); }
+    stage(book.id, tabRange(TABS.checklist, "D" + row), s.value);
+    findTask(chk, row).resp = s.value;
+    markTask(row, s);
   }));
 }
 
@@ -1388,23 +1480,22 @@ function autosize(t) { t.style.height = "auto"; t.style.height = t.scrollHeight 
 
 function bindFormInputs(el, book) {
   el.querySelectorAll("textarea[data-cell]").forEach((t) => {
+    const range = tabRange(t.dataset.tab, t.dataset.cell);
+    if (staged(book.id, range)) { t.value = pending.get(pkey(book.id, range)).value; t.classList.add("dirty"); }
     autosize(t);
     t.dataset.orig = t.value;
     t.oninput = () => autosize(t);
-    t.onblur = async () => {
+    t.onblur = () => {
       if (t.value === t.dataset.orig) return;
-      try {
-        await api().set(book.id, tabRange(t.dataset.tab, t.dataset.cell), [[t.value]]);
-        t.dataset.orig = t.value;
-        if (t.dataset.head) {   // primer dato en un mes nuevo: le pone el título a la columna
-          const head = t.dataset.head, h = JSON.parse(decodeURIComponent(head));
-          for (let k = 0; k < h.cells.length; k++) await api().set(book.id, tabRange(t.dataset.tab, h.cells[k]), [[h.titles[k]]]);
-          el.querySelectorAll("textarea[data-head]").forEach((x) => { if (x.dataset.head === head) delete x.dataset.head; });
-        }
-        const f = t.closest(".field"); if (f) f.classList.toggle("empty", !t.value.trim());
-        delete state.cache[book.id];
-        toast("Guardado");
-      } catch (e) { toast("No se pudo guardar: " + e.message); }
+      stage(book.id, range, t.value);
+      t.dataset.orig = t.value;
+      t.classList.add("dirty");
+      if (t.dataset.head) {   // primer dato en un mes nuevo: también le pone el título a la columna
+        const head = t.dataset.head, h = JSON.parse(decodeURIComponent(head));
+        for (let k = 0; k < h.cells.length; k++) stage(book.id, tabRange(t.dataset.tab, h.cells[k]), h.titles[k], true);
+        el.querySelectorAll("textarea[data-head]").forEach((x) => { if (x.dataset.head === head) delete x.dataset.head; });
+      }
+      const f = t.closest(".field"); if (f) f.classList.toggle("empty", !t.value.trim());
     };
   });
 }
