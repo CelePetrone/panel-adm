@@ -205,8 +205,6 @@
   .loading { color: var(--muted); padding: 30px 0; }
   .savebar { position: sticky; top: 0; z-index: 15; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; background: #FFF4CC; border: 1px solid #E8C547; color: #6B5200; border-radius: 10px; padding: 10px 14px; margin: -8px 0 16px; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,.08); }
   .savebar b { flex: 1; }
-  textarea.dirty, select.dirty { background: #FFF4CC; border-color: #E8C547; }
-  .task.dirty, .paso.dirty { background: #FFF8DC; border-radius: 8px; }
   .reconnect { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 25; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center; background: var(--ink); color: #fff; padding: 10px 14px; border-radius: 10px; font-size: 14px; box-shadow: 0 6px 18px rgba(0,0,0,.2); width: max-content; max-width: calc(100% - 32px); }
   .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 30; display: flex; align-items: center; justify-content: center; padding: 16px; }
   .modal-bg .card { max-width: 380px; width: 100%; margin: 0; }
@@ -684,6 +682,7 @@ async function start(mode, interactive, forceConsent) {
       if (interactive) await requestToken(forceConsent ? "consent" : "");
       state.user = await googleApi.me();
       if (state.user?.email) store("adm_email", state.user.email);
+      restorePending();
     } else {
       state.user = { given_name: "Demo" };
     }
@@ -737,7 +736,7 @@ function renderApp() {
       </nav>
       <main id="page"></main>
     </div>`;
-  document.querySelectorAll(".nav-item").forEach((b) => (b.onclick = () => leaveOk(() => go(b.dataset.page))));
+  document.querySelectorAll(".nav-item").forEach((b) => (b.onclick = () => go(b.dataset.page)));
   $("#btn-out").onclick = () => leaveOk(logout);
   renderPage();
 }
@@ -800,11 +799,23 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && Da
 
 /* ---------- cambios sin guardar ---------- */
 
-// Lo que se toca en el panel queda acá, marcado en amarillo, hasta que se aprieta Guardar.
+// Lo que se toca en el panel queda acá hasta que se aprieta Guardar. Se puede cambiar de pestaña o de cliente sin perderlo.
+// También queda guardado en este navegador: si se cierra la pestaña o se apaga la compu, al volver a entrar sigue ahí para guardar.
 const pending = new Map();   // "planilla|rango" -> { id, range, value }
 const pkey = (id, range) => id + "|" + range;
+function keepPending() {
+  if (state.mode !== "google") return;
+  store("adm_pending", pending.size ? { email: state.user?.email || "", list: [...pending.values()] } : undefined);
+}
+function restorePending() {
+  const saved = recall("adm_pending");
+  if (!saved || state.mode !== "google" || (saved.email && saved.email !== state.user?.email)) return;
+  saved.list.forEach((w) => pending.set(pkey(w.id, w.range), w));
+}
 // auto: lo agrega el panel solo (como los títulos de un mes nuevo) y no se cuenta como cambio.
-function stage(id, range, value, auto) { pending.set(pkey(id, range), { id, range, value, auto }); updateSaveBar(); }
+function stage(id, range, value, auto) { pending.set(pkey(id, range), { id, range, value, auto }); keepPending(); updateSaveBar(); }
+// El valor sin guardar de una celda, si hay uno.
+const pendingValue = (id, range) => pending.get(pkey(id, range))?.value;
 const changeCount = () => [...pending.values()].filter((w) => !w.auto).length;
 const staged = (id, range) => pending.has(pkey(id, range));
 
@@ -837,6 +848,7 @@ async function saveAll() {
     for (const id in ids) {
       await api().setMany(id, ids[id]);
       ids[id].forEach((d) => pending.delete(pkey(id, d.range)));
+      keepPending();
     }
   } catch (e) {
     if (btn) btn.disabled = false;
@@ -851,31 +863,18 @@ async function saveAll() {
 
 async function discardAll() {
   pending.clear();
+  keepPending();
   await refresh(true).catch(() => renderPage(true));
 }
 
-// Antes de cambiar de pestaña, de cliente o de recargar: si hay cambios sin guardar, pregunta qué hacer.
-function leaveOk(next, cancel) {
+// Al cerrar sesión con cambios sin guardar, pregunta (en otra cuenta no tienen que aparecer).
+function leaveOk(next) {
   if (!pending.size) return next();
-  const bg = document.createElement("div");
-  bg.className = "modal-bg";
-  bg.innerHTML = `<div class="card"><h2 style="margin-top:0">Tenés cambios sin guardar</h2>
-    <p class="muted">¿Qué hacemos con ${changeCount() === 1 ? "el cambio" : `los ${changeCount()} cambios`}?</p>
-    <div class="row" style="justify-content:flex-end;flex-wrap:wrap">
-      <button class="btn ghost small" data-act="stay">Seguir acá</button>
-      <button class="btn ghost small" data-act="drop">No guardar</button>
-      <button class="btn small" data-act="save">💾 Guardar</button>
-    </div></div>`;
-  document.body.appendChild(bg);
-  const close = () => bg.remove();
-  bg.querySelector("[data-act=stay]").onclick = () => { close(); cancel && cancel(); };
-  bg.querySelector("[data-act=drop]").onclick = () => { close(); pending.clear(); state.cache = {}; state.pasos = null; updateSaveBar(); next(); };
-  bg.querySelector("[data-act=save]").onclick = async () => { close(); if (await saveAll()) next(); else cancel && cancel(); };
+  if (!confirm(`Tenés ${changeCount() === 1 ? "1 cambio" : changeCount() + " cambios"} sin guardar. ¿Salir igual y descartarlos?`)) return;
+  pending.clear(); keepPending(); updateSaveBar(); next();
 }
-window.addEventListener("beforeunload", (e) => {
-  const typing = [...document.querySelectorAll("textarea[data-cell]")].some((t) => t.value !== t.dataset.orig);
-  if (pending.size || typing) { e.preventDefault(); e.returnValue = ""; }
-});
+// Al cerrar la pestaña o la app con cambios sin guardar, el navegador avisa.
+window.addEventListener("beforeunload", (e) => { if (pending.size) { e.preventDefault(); e.returnValue = ""; } });
 
 function demoBanner() {
   return state.mode === "demo" ? `<div class="banner">Estás viendo datos de ejemplo. Los cambios no se guardan en ninguna planilla.</div>` : "";
@@ -888,7 +887,7 @@ function clientPicker() {
 }
 function bindClientPicker() {
   const s = $("#client-select");
-  if (s) s.onchange = () => leaveOk(() => { state.current = s.value; store("adm_client", s.value); renderPage(); }, () => (s.value = state.current));
+  if (s) s.onchange = () => { state.current = s.value; store("adm_client", s.value); renderPage(); };
 }
 const currentClient = () => state.clients.find((c) => c.name === state.current);
 
@@ -971,6 +970,14 @@ async function loadPasos(force) {
     splitPendientes(m.pendientes).forEach((x) => nuevos.push([x.text, m.cliente || "Interna", x.resp.join(", "), "Pendiente", origen, m.fecha]));
   }
   if (nuevos.length) { await api().append(place.id, tabRange(PASOS_TAB, "A1:F1"), nuevos); pasos = await read(); }
+  // Lo que se cambió y todavía no se guardó, encima de lo que dice la planilla.
+  pasos.forEach((p) => {
+    const v = (col) => pendingValue(place.id, tabRange(PASOS_TAB, col + p.row));
+    if (v("B") !== undefined) p.cliente = v("B");
+    if (v("C") !== undefined) p.resp = String(v("C")).split(/\s*,\s*/).filter(Boolean);
+    if (v("D") !== undefined) p.estado = v("D");
+    if (v("G") !== undefined) p.orden = Number(v("G")) || 0;
+  });
   state.pasos = { place, list: pasos };
   return state.pasos;
 }
@@ -988,9 +995,8 @@ function clienteSelect(value, cls) {
 
 function pasoHtml(p) {
   const st = estadoDe(p.estado);
-  const dirty = state.pasos && ["B", "C", "D", "G"].some((c) => staged(state.pasos.place.id, tabRange(PASOS_TAB, c + p.row)));
   const movible = p.estado !== "Listo";
-  return `<div class="paso ${st.cls} ${st.name === "Listo" ? "listo" : ""} ${dirty ? "dirty" : ""} ${movible ? "movible" : ""}" data-row="${p.row}">
+  return `<div class="paso ${st.cls} ${st.name === "Listo" ? "listo" : ""} ${movible ? "movible" : ""}" data-row="${p.row}">
     ${movible ? `<div class="paso-grip" title="Arrastrá para cambiar el orden" aria-hidden="true">⠿</div>` : ""}
     <div class="paso-main">
       <div class="paso-text">${esc(p.text)}</div>
@@ -1139,7 +1145,7 @@ async function pageInicio(el) {
     <div class="grid">
       ${state.clients.map((c, i) => clientCard(c, books[i])).join("")}
     </div>`;
-  $("#reload").onclick = () => leaveOk(() => refresh());
+  $("#reload").onclick = () => refresh();
   loadPasos().then(() => renderPasos($("#pasos")))
     .catch((e) => { if ($("#pasos")) $("#pasos").innerHTML = `<div class="card"><h2>Próximos pasos</h2><p class="error small">${esc(e.message)}</p></div>`; });
   el.querySelectorAll("[data-open]").forEach((b) => (b.onclick = () => { state.current = b.dataset.client; store("adm_client", state.current); go(b.dataset.open); }));
@@ -1412,12 +1418,17 @@ async function pageChecklist(el) {
   const book = await loadClientBook(c);
   if (!book) { el.innerHTML = `<div class="topbar"><h1>Checklist</h1>${clientPicker()}</div>${noSheetMessage(c)}`; bindClientPicker(); return; }
   const chk = book.checklist;
+  chk.stages.forEach((s) => s.groups.forEach((g) => g.tasks.forEach((t) => {   // lo que todavía no se guardó
+    const done = pendingValue(book.id, tabRange(TABS.checklist, "C" + t.row)), resp = pendingValue(book.id, tabRange(TABS.checklist, "D" + t.row));
+    if (done !== undefined) t.done = done === true || done === "TRUE";
+    if (resp !== undefined) t.resp = resp;
+  })));
   const day = new Date().getDate();
   const ph = phaseFor(day);
   el.innerHTML = `
     ${demoBanner()}
     <div class="topbar">
-      <div><h1>Checklist</h1><p class="sub">${chk?.inicio ? "Inicio del servicio: " + esc(chk.inicio) : "Tildá a medida que avanzan. Se guarda en la planilla."}</p></div>
+      <div><h1>Checklist</h1><p class="sub">${chk?.inicio ? "Inicio del servicio: " + esc(chk.inicio) : "Tildá a medida que avanzan y tocá Guardar."}</p></div>
       <div class="row">${clientPicker()}${openSheetBtn(book)}</div>
     </div>
     ${!chk ? `<div class="card muted">La planilla no tiene una pestaña "Checklist".</div>` :
@@ -1452,23 +1463,19 @@ async function pageChecklist(el) {
     card.classList.toggle("collapsed");
     h.lastElementChild.textContent = state.collapsed[key] ? "▸" : "▾";
   }));
-  const markTask = (row, x) => { if (staged(book.id, tabRange(TABS.checklist, "C" + row)) || staged(book.id, tabRange(TABS.checklist, "D" + row))) x.closest(".task").classList.add("dirty"); };
   el.querySelectorAll("input[data-row]").forEach((cb) => {
-    markTask(+cb.dataset.row, cb);
     cb.onchange = () => {
       const row = +cb.dataset.row;
       cb.closest(".task").classList.toggle("done", cb.checked);
       stage(book.id, tabRange(TABS.checklist, "C" + row), cb.checked);
       findTask(chk, row).done = cb.checked;
       refreshStageCounts(cb.closest("[data-stage]"));
-      markTask(row, cb);
     };
   });
   el.querySelectorAll("select[data-resp]").forEach((s) => (s.onchange = () => {
     const row = +s.dataset.resp;
     stage(book.id, tabRange(TABS.checklist, "D" + row), s.value);
     findTask(chk, row).resp = s.value;
-    markTask(row, s);
   }));
 }
 
@@ -1495,7 +1502,7 @@ async function pageFicha(el) {
   el.innerHTML = `
     ${demoBanner()}
     <div class="topbar">
-      <div><h1>Ficha del cliente</h1><p class="sub">${st.done} de ${st.total} datos completos. Se guarda al salir de cada casillero.</p></div>
+      <div><h1>Ficha del cliente</h1><p class="sub">${st.done} de ${st.total} datos completos.</p></div>
       <div class="row">${clientPicker()}${openSheetBtn(book)}</div>
     </div>
     ${book.ficha ? formSections(book.ficha) : `<div class="card muted">La planilla no tiene una pestaña "${TABS.ficha}".</div>`}`;
@@ -1510,7 +1517,7 @@ async function pageRelev(el) {
   el.innerHTML = `
     ${demoBanner()}
     <div class="topbar">
-      <div><h1>Relevamiento</h1><p class="sub">${st.done} de ${st.total} respondidas. Se guarda al salir de cada casillero.</p></div>
+      <div><h1>Relevamiento</h1><p class="sub">${st.done} de ${st.total} respondidas.</p></div>
       <div class="row">${clientPicker()}${openSheetBtn(book)}</div>
     </div>
     <div class="card"><div class="row small"><span>Avance del relevamiento</span><span class="spacer"></span><span class="muted">${st.total ? Math.round((st.done / st.total) * 100) : 0}%</span></div>${barHtml(st.done, st.total)}</div>
@@ -1553,15 +1560,14 @@ function autosize(t) { t.style.height = "auto"; t.style.height = t.scrollHeight 
 function bindFormInputs(el, book) {
   el.querySelectorAll("textarea[data-cell]").forEach((t) => {
     const range = tabRange(t.dataset.tab, t.dataset.cell);
-    if (staged(book.id, range)) { t.value = pending.get(pkey(book.id, range)).value; t.classList.add("dirty"); }
+    if (staged(book.id, range)) t.value = pendingValue(book.id, range);
     autosize(t);
     t.dataset.orig = t.value;
-    t.oninput = () => autosize(t);
-    t.onblur = () => {
-      if (t.value === t.dataset.orig) return;
+    // Se anota con cada letra, así no se pierde nada aunque se apague la compu en medio de escribir.
+    t.oninput = () => {
+      autosize(t);
+      if (t.value === t.dataset.orig && !staged(book.id, range)) return;
       stage(book.id, range, t.value);
-      t.dataset.orig = t.value;
-      t.classList.add("dirty");
       if (t.dataset.head) {   // primer dato en un mes nuevo: también le pone el título a la columna
         const head = t.dataset.head, h = JSON.parse(decodeURIComponent(head));
         for (let k = 0; k < h.cells.length; k++) stage(book.id, tabRange(t.dataset.tab, h.cells[k]), h.titles[k], true);
